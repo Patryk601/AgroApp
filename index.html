@@ -17,15 +17,6 @@
       height: 100%;
       margin: 0;
     }
-    #loginForm {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      z-index: 9999;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
-    }
     #fieldForm {
       display: none;
       position: absolute;
@@ -39,11 +30,6 @@
 </head>
 <body>
   <div id="map"></div>
-  <div id="loginForm">
-    <input type="email" id="email" placeholder="Email" /><br />
-    <input type="password" id="password" placeholder="Hasło" /><br />
-    <button onclick="signIn()">Zaloguj / Zarejestruj</button>
-  </div>
 
   <div id="fieldForm">
     <input type="text" id="fieldName" placeholder="Nazwa pola" /><br />
@@ -58,8 +44,8 @@
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
 
   <script>
     const firebaseConfig = {
@@ -71,11 +57,17 @@
       appId: "1:683118014918:web:aba19ec1b52fb12f142c7"
     };
 
-    const app = firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
+    firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    let userId = null;
+    // Pobieranie UID z URL-a
+    const params = new URLSearchParams(window.location.search);
+    const userId = params.get("uid");
+
+    if (!userId) {
+      alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
+    }
+
     let drawnPolygon = null;
     let drawnItems = new L.FeatureGroup();
 
@@ -113,22 +105,6 @@
       document.getElementById('fieldForm').style.display = 'block';
     });
 
-    function signIn() {
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
-      auth.signInWithEmailAndPassword(email, password)
-        .then(user => {
-          userId = user.user.uid;
-          document.getElementById('loginForm').style.display = 'none';
-        })
-        .catch(() => {
-          auth.createUserWithEmailAndPassword(email, password).then(user => {
-            userId = user.user.uid;
-            document.getElementById('loginForm').style.display = 'none';
-          });
-        });
-    }
-
     function saveField() {
       if (!drawnPolygon || !userId) return;
 
@@ -154,7 +130,5 @@
       });
     }
   </script>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
 </body>
 </html>
