@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Interaktywna mapa pól</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroApp – Mapa pól</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
@@ -15,57 +16,57 @@
     html, body, #map {
       height: 100%;
       margin: 0;
-      padding: 0;
+    }
+    #loginForm {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      z-index: 9999;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+    #fieldForm {
+      display: none;
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      z-index: 9999;
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="loginForm">
+    <input type="email" id="email" placeholder="Email" /><br />
+    <input type="password" id="password" placeholder="Hasło" /><br />
+    <button onclick="signIn()">Zaloguj / Zarejestruj</button>
+  </div>
+
+  <div id="fieldForm">
+    <input type="text" id="fieldName" placeholder="Nazwa pola" /><br />
+    <input type="text" id="cropType" placeholder="Rodzaj uprawy" /><br />
+    <input type="text" id="village" placeholder="Miejscowość" /><br />
+    <label for="color">Kolor pola:</label>
+    <input type="color" id="color" value="#4caf50" /><br />
+    <p id="areaOutput">Powierzchnia: 0 ha</p>
+    <button onclick="saveField()">Zapisz pole</button>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+
   <script>
-    const map = L.map('map').setView([51.25, 22.57], 12);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    // Dodanie warstwy na rysowane obiekty
-    const drawnItems = new L.FeatureGroup();
-    map.addLayer(drawnItems);
-
-    // Narzędzia do rysowania
-    const drawControl = new L.Control.Draw({
-      draw: {
-        polygon: true,
-        rectangle: true,
-        circle: false,
-        marker: false,
-        polyline: false,
-        circlemarker: false
-      },
-      edit: {
-        featureGroup: drawnItems
-      }
-    });
-    map.addControl(drawControl);
-
-    // Obsługa narysowania pola
-    map.on('draw:created', function (event) {
-      const layer = event.layer;
-      drawnItems.addLayer(layer);
-
-      const type = event.layerType;
-      let coords = '';
-
-      if (type === 'polygon' || type === 'rectangle') {
-        coords = layer.getLatLngs();
-        console.log('Granice pola:', coords);
-      }
-
-      layer.bindPopup("Nowe pole").openPopup();
-    });
-  </script>
-</body>
-</html>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAjzbeyCqqSg7KyM4NqGxQCrrxSz7rgC18",
+      authDomain: "agroapp-1d397.firebaseapp.com",
+      projectId: "agroapp-1d397",
+      storageBucket: "agroapp-1d397.appspot.com",
+      messagingSenderId: "683118014918",
+      appId: "1:683118014918:web:aba19ec1b52fb12f142c7"
+    };
