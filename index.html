@@ -70,3 +70,91 @@
       messagingSenderId: "683118014918",
       appId: "1:683118014918:web:aba19ec1b52fb12f142c7"
     };
+
+    const app = firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    let userId = null;
+    let drawnPolygon = null;
+    let drawnItems = new L.FeatureGroup();
+
+    const map = L.map('map').setView([51.25, 22.57], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: true,
+        rectangle: false,
+        marker: false,
+        polyline: false,
+        circle: false,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: drawnItems
+      }
+    });
+    map.addControl(drawControl);
+
+    map.on('draw:created', function (e) {
+      drawnItems.clearLayers();
+      drawnPolygon = e.layer;
+      drawnItems.addLayer(drawnPolygon);
+
+      const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
+      const areaHa = (area / 10000).toFixed(2);
+      const areaAr = (area / 100).toFixed(2);
+      document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
+      document.getElementById('fieldForm').style.display = 'block';
+    });
+
+    function signIn() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      auth.signInWithEmailAndPassword(email, password)
+        .then(user => {
+          userId = user.user.uid;
+          document.getElementById('loginForm').style.display = 'none';
+        })
+        .catch(() => {
+          auth.createUserWithEmailAndPassword(email, password).then(user => {
+            userId = user.user.uid;
+            document.getElementById('loginForm').style.display = 'none';
+          });
+        });
+    }
+
+    function saveField() {
+      if (!drawnPolygon || !userId) return;
+
+      const coords = drawnPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
+      const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
+      const areaHa = area / 10000;
+      const areaAr = area / 100;
+
+      db.collection("fields").add({
+        userId: userId,
+        name: document.getElementById("fieldName").value,
+        crop: document.getElementById("cropType").value,
+        village: document.getElementById("village").value,
+        color: document.getElementById("color").value,
+        coordinates: coords,
+        area_ha: areaHa,
+        area_ar: areaAr,
+        created_at: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(() => {
+        alert("Pole zapisane!");
+        document.getElementById("fieldForm").style.display = "none";
+        drawnItems.clearLayers();
+      });
+    }
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+</body>
+</html>
