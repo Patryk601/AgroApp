@@ -43,9 +43,11 @@
 
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+
+  <!-- Użycie compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
   <script>
     const firebaseConfig = {
@@ -60,7 +62,7 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // Pobieranie UID z URL-a
+    // UID z parametrów URL
     const params = new URLSearchParams(window.location.search);
     const userId = params.get("uid");
 
@@ -127,6 +129,9 @@
         alert("Pole zapisane!");
         document.getElementById("fieldForm").style.display = "none";
         drawnItems.clearLayers();
+      }).catch(error => {
+        console.error("Błąd zapisu pola:", error);
+        alert("Wystąpił błąd podczas zapisywania pola.");
       });
     }
   </script>
