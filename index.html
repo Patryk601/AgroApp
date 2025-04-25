@@ -27,7 +27,6 @@
 <div id="map"></div>
 
 <div id="fieldForm">
-  <input type="hidden" id="fieldId" />
   <input type="text" id="fieldName" placeholder="Nazwa pola" /><br />
   <input type="text" id="cropType" placeholder="Rodzaj uprawy" /><br />
   <input type="text" id="village" placeholder="Miejscowość" /><br />
@@ -97,7 +96,6 @@
     const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
     const areaHa = (area / 10000).toFixed(2);
     const areaAr = (area / 100).toFixed(2);
-
     document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
     document.getElementById('fieldForm').style.display = 'block';
   });
