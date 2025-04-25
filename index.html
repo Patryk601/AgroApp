@@ -20,14 +20,15 @@
   </style>
 </head>
 <body>
+
 <div id="map"></div>
 
 <div id="fieldForm">
-  <input type="text" id="fieldName" placeholder="Nazwa pola" /><br />
-  <input type="text" id="cropType" placeholder="Rodzaj uprawy" /><br />
-  <input type="text" id="village" placeholder="Miejscowość" /><br />
-  <label for="color">Kolor pola:</label>
-  <input type="color" id="color" value="#4caf50" /><br />
+  <input type="text" id="fieldName" placeholder="Nazwa pola"><br>
+  <input type="text" id="cropType" placeholder="Rodzaj uprawy"><br>
+  <input type="text" id="village" placeholder="Miejscowość"><br>
+  <label>Kolor pola:</label>
+  <input type="color" id="color" value="#4caf50"><br>
   <p id="areaOutput">Powierzchnia: 0 ha</p>
   <button onclick="saveField()">Zapisz pole</button>
 </div>
@@ -39,7 +40,6 @@
 <!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-
 <script>
   const firebaseConfig = {
     apiKey: "AIzaSyAjzbeyCqqSg7KyM4NqGxQCrrxSz7rgC18",
@@ -56,32 +56,19 @@
   const params = new URLSearchParams(window.location.search);
   const userId = params.get("uid");
 
-  if (!userId) {
-    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
-  }
+  if (!userId) alert("Brak identyfikatora użytkownika w URL (?uid=...)");
 
-  const drawnItems = new L.FeatureGroup();
   const map = L.map('map').setView([51.25, 22.57], 12);
-
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
+    maxZoom: 19, attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
-  map.addLayer(drawnItems);
-
+  const drawnItems = new L.FeatureGroup().addTo(map);
   const drawControl = new L.Control.Draw({
     draw: {
-      polygon: true,
-      rectangle: false,
-      marker: false,
-      polyline: false,
-      circle: false,
-      circlemarker: false
+      polygon: true, rectangle: false, marker: false, polyline: false, circle: false, circlemarker: false
     },
-    edit: {
-      featureGroup: drawnItems
-    }
+    edit: { featureGroup: drawnItems }
   });
   map.addControl(drawControl);
 
@@ -103,33 +90,75 @@
 
     const coords = currentLayer.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
     const area = L.GeometryUtil.geodesicArea(currentLayer.getLatLngs()[0]);
-    const areaHa = area / 10000;
-    const areaAr = area / 100;
-
     const fieldData = {
-      userId: userId,
+      userId,
       name: document.getElementById("fieldName").value,
       crop: document.getElementById("cropType").value,
       village: document.getElementById("village").value,
       color: document.getElementById("color").value,
       coordinates: coords,
-      area_ha: areaHa,
-      area_ar: areaAr,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+      area_ha: area / 10000,
+      area_ar: area / 100,
+      created_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
-    db.collection("fields").add(fieldData)
-      .then(() => {
-        alert("Pole zapisane!");
-        document.getElementById("fieldForm").style.display = "none";
-        currentLayer = null;
+    db.collection("fields").add(fieldData).then(() => {
+      const label = L.tooltip({
+        permanent: true,
+        direction: "center",
+        className: "field-label"
       })
-      .catch((error) => {
-        console.error("Błąd zapisu: ", error);
-        alert("Wystąpił błąd podczas zapisu pola.");
-      });
+      .setContent(fieldData.name)
+      .setLatLng(currentLayer.getBounds().getCenter());
+
+      currentLayer.bindTooltip(label).openTooltip();
+
+      currentLayer.on('click', () => showFieldInfo(fieldData));
+      resetForm();
+    });
   }
+
+  function resetForm() {
+    document.getElementById("fieldForm").style.display = "none";
+    document.getElementById("fieldName").value = "";
+    document.getElementById("cropType").value = "";
+    document.getElementById("village").value = "";
+    document.getElementById("color").value = "#4caf50";
+    document.getElementById("areaOutput").innerText = "Powierzchnia: 0 ha";
+  }
+
+  function showFieldInfo(data) {
+    document.getElementById("fieldForm").style.display = "block";
+    document.getElementById("fieldName").value = data.name;
+    document.getElementById("cropType").value = data.crop;
+    document.getElementById("village").value = data.village;
+    document.getElementById("color").value = data.color;
+    document.getElementById("areaOutput").innerText =
+      `Powierzchnia: ${data.area_ha.toFixed(2)} ha (${data.area_ar.toFixed(2)} arów)`;
+  }
+
+  function loadFields() {
+    db.collection("fields").where("userId", "==", userId).get().then(snapshot => {
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const polygon = L.polygon(data.coordinates, { color: data.color }).addTo(drawnItems);
+
+        const label = L.tooltip({
+          permanent: true,
+          direction: "center",
+          className: "field-label"
+        })
+        .setContent(data.name)
+        .setLatLng(polygon.getBounds().getCenter());
+
+        polygon.bindTooltip(label).openTooltip();
+
+        polygon.on('click', () => showFieldInfo(data));
+      });
+    });
+  }
+
+  if (userId) loadFields();
 </script>
 
 </body>
