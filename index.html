@@ -7,10 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-    }
+    html, body, #map { height: 100%; margin: 0; }
     #fieldForm {
       display: none;
       position: absolute;
@@ -19,27 +16,27 @@
       background: white;
       padding: 10px;
       z-index: 9999;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      border: 1px solid #ccc;
     }
-    #editBtn {
-      display: none;
-      margin-left: 10px;
+    .field-label {
+      background-color: white;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-
 <div id="map"></div>
 
 <div id="fieldForm">
-  <input type="text" id="fieldName" placeholder="Nazwa pola" disabled /><br />
-  <input type="text" id="cropType" placeholder="Rodzaj uprawy" disabled /><br />
-  <input type="text" id="village" placeholder="Miejscowość" disabled /><br />
+  <input type="text" id="fieldName" placeholder="Nazwa pola" /><br />
+  <input type="text" id="cropType" placeholder="Rodzaj uprawy" /><br />
+  <input type="text" id="village" placeholder="Miejscowość" /><br />
   <label for="color">Kolor pola:</label>
-  <input type="color" id="color" value="#4caf50" disabled /><br />
+  <input type="color" id="color" value="#4caf50" /><br />
   <p id="areaOutput">Powierzchnia: 0 ha</p>
-  <button id="saveBtn">Zapisz pole</button>
-  <button id="editBtn">Edytuj dane</button>
+  <button id="saveField">Zapisz pole</button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
@@ -57,12 +54,12 @@
     messagingSenderId: "683118014918",
     appId: "1:683118014918:web:aba19ec1b52fb12f142c7"
   };
-
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
   const params = new URLSearchParams(window.location.search);
   const userId = params.get("uid");
+  if (!userId) alert("Brak UID, dane nie zapiszą się poprawnie!");
 
   const map = L.map('map').setView([51.25, 22.57], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -70,111 +67,95 @@
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
-  let drawnItems = new L.FeatureGroup().addTo(map);
-  let currentPolygon = null;
-  let editingEnabled = false;
+  const drawnItems = new L.FeatureGroup().addTo(map);
 
   const drawControl = new L.Control.Draw({
-    draw: {
-      polygon: true,
-      rectangle: false,
-      marker: false,
-      polyline: false,
-      circle: false,
-      circlemarker: false
-    },
-    edit: {
-      featureGroup: drawnItems,
-      edit: false
-    }
+    draw: { polygon: true, rectangle: false, marker: false, polyline: false, circle: false, circlemarker: false },
+    edit: { featureGroup: drawnItems, remove: true }
   });
   map.addControl(drawControl);
 
-  document.getElementById("editBtn").addEventListener("click", () => {
-    const inputs = document.querySelectorAll("#fieldForm input");
-    inputs.forEach(input => input.disabled = false);
-    editingEnabled = true;
-  });
+  let currentPolygon = null;
+  let activeLayerId = null;
 
-  map.on('draw:created', function (e) {
-    const polygon = e.layer;
-    currentPolygon = polygon;
-    drawnItems.addLayer(polygon);
-    showFieldForm(polygon);
-  });
-
-  map.on("click", () => hideForm());
-
-  function showFieldForm(polygon, data = null) {
-    polygon.on("click", () => showFieldForm(polygon, polygon.data));
-    document.getElementById("fieldForm").style.display = "block";
-
-    if (data) {
-      document.getElementById("fieldName").value = data.name;
-      document.getElementById("cropType").value = data.crop;
-      document.getElementById("village").value = data.village;
-      document.getElementById("color").value = data.color;
-      document.getElementById("areaOutput").innerText = `Powierzchnia: ${data.area_ha.toFixed(2)} ha (${data.area_ar.toFixed(2)} arów)`;
-      const inputs = document.querySelectorAll("#fieldForm input");
-      inputs.forEach(input => input.disabled = true);
-      document.getElementById("editBtn").style.display = "inline-block";
-    } else {
-      const area = L.GeometryUtil.geodesicArea(polygon.getLatLngs()[0]);
-      const areaHa = area / 10000;
-      const areaAr = area / 100;
-      document.getElementById("areaOutput").innerText = `Powierzchnia: ${areaHa.toFixed(2)} ha (${areaAr.toFixed(2)} arów)`;
-      document.getElementById("fieldName").value = "";
-      document.getElementById("cropType").value = "";
-      document.getElementById("village").value = "";
-      document.getElementById("editBtn").style.display = "none";
-    }
-  }
-
-  function hideForm() {
-    document.getElementById("fieldForm").style.display = "none";
-  }
-
-  document.getElementById("saveBtn").addEventListener("click", () => {
+  document.getElementById('saveField').onclick = () => {
     if (!currentPolygon || !userId) return;
 
     const coords = currentPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
     const area = L.GeometryUtil.geodesicArea(currentPolygon.getLatLngs()[0]);
-    const areaHa = area / 10000;
-    const areaAr = area / 100;
+    const areaHa = (area / 10000).toFixed(2);
+    const areaAr = (area / 100).toFixed(2);
 
     const fieldData = {
-      userId: userId,
+      userId,
       name: document.getElementById("fieldName").value,
       crop: document.getElementById("cropType").value,
       village: document.getElementById("village").value,
       color: document.getElementById("color").value,
       coordinates: coords,
-      area_ha: areaHa,
-      area_ar: areaAr,
+      area_ha: parseFloat(areaHa),
+      area_ar: parseFloat(areaAr),
       created_at: firebase.firestore.FieldValue.serverTimestamp(),
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
-    db.collection("fields").add(fieldData)
-      .then(() => location.reload())
-      .catch((error) => alert("Błąd zapisu: " + error));
+    if (activeLayerId) {
+      db.collection("fields").doc(activeLayerId).update(fieldData);
+    } else {
+      db.collection("fields").add(fieldData);
+    }
+    document.getElementById("fieldForm").style.display = "none";
+    activeLayerId = null;
+  };
+
+  function renderLabel(latlngs, name) {
+    const center = L.polygon(latlngs).getBounds().getCenter();
+    return L.marker(center, {
+      icon: L.divIcon({ className: 'field-label', html: name || '?' })
+    });
+  }
+
+  map.on('draw:created', function (e) {
+    currentPolygon = e.layer;
+    drawnItems.addLayer(currentPolygon);
+    document.getElementById("fieldForm").style.display = "block";
+    document.getElementById("areaOutput").innerText = `Powierzchnia: ${(L.GeometryUtil.geodesicArea(currentPolygon.getLatLngs()[0]) / 10000).toFixed(2)} ha`;
   });
 
-  // Wczytaj dane z Firestore
-  db.collection("fields").where("userId", "==", userId).get().then(snapshot => {
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const latlngs = data.coordinates.map(p => [p.lat, p.lng]);
-      const polygon = L.polygon(latlngs, { color: data.color, fillColor: data.color, fillOpacity: 0.4 }).addTo(drawnItems);
-      polygon.data = data;
-      polygon.bindTooltip(data.name, { permanent: true, direction: "center" });
-      polygon.on("click", () => {
-        currentPolygon = polygon;
-        showFieldForm(polygon, data);
+  map.on('draw:edited', function () {
+    document.getElementById("fieldForm").style.display = "none";
+  });
+
+  map.on('draw:deleted', function (e) {
+    e.layers.eachLayer(layer => {
+      const id = layer.options.firebaseId;
+      if (id) db.collection("fields").doc(id).delete();
+    });
+    document.getElementById("fieldForm").style.display = "none";
+  });
+
+  function loadFields() {
+    db.collection("fields").where("userId", "==", userId).get().then(snapshot => {
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const polygon = L.polygon(data.coordinates, { color: data.color }).addTo(drawnItems);
+        polygon.options.firebaseId = doc.id;
+        const label = renderLabel(data.coordinates, data.name).addTo(map);
+        polygon.on('click', () => {
+          currentPolygon = polygon;
+          activeLayerId = doc.id;
+          document.getElementById("fieldForm").style.display = "block";
+          document.getElementById("fieldName").value = data.name;
+          document.getElementById("cropType").value = data.crop;
+          document.getElementById("village").value = data.village;
+          document.getElementById("color").value = data.color;
+          document.getElementById("areaOutput").innerText = `Powierzchnia: ${data.area_ha.toFixed(2)} ha (${data.area_ar.toFixed(2)} arów)`;
+        });
       });
     });
-  });
-</script>
+  }
 
+  loadFields();
+</script>
 </body>
 </html>
