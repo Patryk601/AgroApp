@@ -1,140 +1,77 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AgroApp – Mapa pól</title>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  <title>Mapa Pól - AgroApp</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
     html, body, #map {
       height: 100%;
       margin: 0;
     }
-    #fieldForm {
-      display: none;
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      z-index: 9999;
-    }
   </style>
 </head>
 <body>
+  <div id="map"></div>
 
-<div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/leaflet-geometryutil"></script>
 
-<div id="fieldForm">
-  <input type="text" id="fieldName" placeholder="Nazwa pola" /><br />
-  <input type="text" id="cropType" placeholder="Rodzaj uprawy" /><br />
-  <input type="text" id="village" placeholder="Miejscowość" /><br />
-  <label for="color">Kolor pola:</label>
-  <input type="color" id="color" value="#4caf50" /><br />
-  <p id="areaOutput">Powierzchnia: 0 ha</p>
-  <button onclick="saveField()">Zapisz pole</button>
-</div>
+  <script>
+    const map = L.map('map').setView([51.2465, 22.5684], 13);
 
-<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
 
-<!-- Firebase v8 zamiast v9 (działa w zwykłym HTML) -->
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
 
-<script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAjzbeyCqqSg7KyM4NqGxQCrrxSz7rgC18",
-    authDomain: "agroapp-1d397.firebaseapp.com",
-    projectId: "agroapp-1d397",
-    storageBucket: "agroapp-1d397.appspot.com",
-    messagingSenderId: "683118014918",
-    appId: "1:683118014918:web:aba19ec1b52fb12f142c7"
-  };
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: {
+          allowIntersection: false,
+          showArea: true,
+        },
+        polyline: false,
+        rectangle: false,
+        circle: false,
+        marker: false,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: drawnItems
+      }
+    });
+    map.addControl(drawControl);
 
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
+    map.on('draw:created', function (e) {
+      const layer = e.layer;
+      drawnItems.addLayer(layer);
 
-  const params = new URLSearchParams(window.location.search);
-  const userId = params.get("uid");
+      const coordinates = layer.getLatLngs()[0].map(coord => ({
+        lat: coord.lat,
+        lng: coord.lng
+      }));
 
-  if (!userId) {
-    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
-  }
+      const areaHa = (L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000).toFixed(2);
 
-  let drawnPolygon = null;
-  let drawnItems = new L.FeatureGroup();
+      const fieldData = {
+        nazwa: prompt("Podaj nazwę pola:"),
+        miejscowosc: prompt("Podaj miejscowość:"),
+        wspolrzedne: coordinates,
+        obszar: areaHa,
+        data: new Date().toISOString()
+      };
 
-  const map = L.map('map').setView([51.25, 22.57], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
-
-  map.addLayer(drawnItems);
-
-  const drawControl = new L.Control.Draw({
-    draw: {
-      polygon: true,
-      rectangle: false,
-      marker: false,
-      polyline: false,
-      circle: false,
-      circlemarker: false
-    },
-    edit: {
-      featureGroup: drawnItems
-    }
-  });
-  map.addControl(drawControl);
-
-  map.on('draw:created', function (e) {
-    drawnItems.clearLayers();
-    drawnPolygon = e.layer;
-    drawnItems.addLayer(drawnPolygon);
-
-    const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
-    const areaHa = (area / 10000).toFixed(2);
-    const areaAr = (area / 100).toFixed(2);
-    document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
-    document.getElementById('fieldForm').style.display = 'block';
-  });
-
-  function saveField() {
-    if (!drawnPolygon || !userId) return;
-
-    const coords = drawnPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
-    const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
-    const areaHa = area / 10000;
-    const areaAr = area / 100;
-
-    const fieldData = {
-      userId: userId,
-      name: document.getElementById("fieldName").value,
-      crop: document.getElementById("cropType").value,
-      village: document.getElementById("village").value,
-      color: document.getElementById("color").value,
-      coordinates: coords,
-      area_ha: areaHa,
-      area_ar: areaAr,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
-    };
-
-    db.collection("fields").add(fieldData)
-      .then(() => {
-        alert("Pole zapisane!");
-        document.getElementById("fieldForm").style.display = "none";
-        drawnItems.clearLayers();
-      })
-      .catch((error) => {
-        console.error("Błąd zapisu: ", error);
-        alert("Wystąpił błąd podczas zapisu pola.");
-      });
-  }
-</script>
-
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('saveFieldToFirestore', fieldData);
+      } else {
+        console.log('Dane do zapisania:', fieldData);
+      }
+    });
+  </script>
 </body>
 </html>
