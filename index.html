@@ -17,6 +17,13 @@
       padding: 10px;
       z-index: 9999;
     }
+    .field-label {
+      background: rgba(255,255,255,0.8);
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -88,14 +95,18 @@
   function saveField() {
     if (!currentLayer || !userId) return;
 
+    const color = document.getElementById("color").value;
+    currentLayer.setStyle({ color });
+
     const coords = currentLayer.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
     const area = L.GeometryUtil.geodesicArea(currentLayer.getLatLngs()[0]);
+
     const fieldData = {
       userId,
       name: document.getElementById("fieldName").value,
       crop: document.getElementById("cropType").value,
       village: document.getElementById("village").value,
-      color: document.getElementById("color").value,
+      color,
       coordinates: coords,
       area_ha: area / 10000,
       area_ar: area / 100,
@@ -103,17 +114,7 @@
     };
 
     db.collection("fields").add(fieldData).then(() => {
-      const label = L.tooltip({
-        permanent: true,
-        direction: "center",
-        className: "field-label"
-      })
-      .setContent(fieldData.name)
-      .setLatLng(currentLayer.getBounds().getCenter());
-
-      currentLayer.bindTooltip(label).openTooltip();
-
-      currentLayer.on('click', () => showFieldInfo(fieldData));
+      addPolygonToMap(fieldData);
       resetForm();
     });
   }
@@ -127,6 +128,20 @@
     document.getElementById("areaOutput").innerText = "Powierzchnia: 0 ha";
   }
 
+  function addPolygonToMap(data) {
+    const polygon = L.polygon(data.coordinates, { color: data.color }).addTo(drawnItems);
+
+    const label = L.tooltip({
+      permanent: true,
+      direction: "center",
+      className: "field-label"
+    }).setContent(data.name).setLatLng(polygon.getBounds().getCenter());
+
+    polygon.bindTooltip(label).openTooltip();
+
+    polygon.on('click', () => showFieldInfo(data));
+  }
+
   function showFieldInfo(data) {
     document.getElementById("fieldForm").style.display = "block";
     document.getElementById("fieldName").value = data.name;
@@ -138,27 +153,18 @@
   }
 
   function loadFields() {
+    if (!userId) return;
     db.collection("fields").where("userId", "==", userId).get().then(snapshot => {
       snapshot.forEach(doc => {
         const data = doc.data();
-        const polygon = L.polygon(data.coordinates, { color: data.color }).addTo(drawnItems);
-
-        const label = L.tooltip({
-          permanent: true,
-          direction: "center",
-          className: "field-label"
-        })
-        .setContent(data.name)
-        .setLatLng(polygon.getBounds().getCenter());
-
-        polygon.bindTooltip(label).openTooltip();
-
-        polygon.on('click', () => showFieldInfo(data));
+        addPolygonToMap(data);
       });
+    }).catch(error => {
+      console.error("Błąd ładowania pól:", error);
     });
   }
 
-  if (userId) loadFields();
+  loadFields();
 </script>
 
 </body>
