@@ -166,6 +166,12 @@
   }
 
   loadFields();
+  window.centerMapFromFlutter = function(lat, lng) {
+    if (map) {
+        map.setView([lat, lng], map.getZoom()); // Przesuń mapę na wskazane współrzędne
+    }
+}
+
 </script>
 
 </body>
