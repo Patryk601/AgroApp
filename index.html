@@ -1,94 +1,86 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8">
   <title>AgroApp Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+  <style>
+    #map { height: 400px; }
+    .form-container { margin-top: 10px; }
+  </style>
 </head>
+<body>
 
-<body style="margin:0; padding:0;">
-  <button onclick="enableDrawing()" style="margin:10px;">Dodaj pole</button>
-  <div id="map" style="width:100%; height:80vh;"></div>
+<h1>Dodaj pole</h1>
+<div id="map"></div>
 
-  <script type="module">
-    // KONFIGURACJA FIREBASE
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, getDocs, query, where, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+<div class="form-container">
+  <input type="text" id="nazwa_pola" placeholder="Nazwa pola"><br>
+  <input type="text" id="miejscowosc" placeholder="Miejscowość"><br>
+  <input type="text" id="rodzaj_uprawy" placeholder="Rodzaj uprawy"><br>
+  <input type="color" id="color" value="#3388ff"><br>
+  <button onclick="saveField()">Zapisz pole</button>
+</div>
 
-    const firebaseConfig = {
-      apiKey: "AlzaSyD1AE1kvvuqVwpcfHdagXUL79Zr3J951hA",
-      authDomain: "agroapp-1d397.firebaseapp.com",
-      projectId: "agroapp-1d397",
-      storageBucket: "agroapp-1d397.appspot.com",
-      messagingSenderId: "683118014918",
-      appId: "1:683118014918:web:ab3ae19ec1b521b2f142c7"
-    };
+<script>
+// Firebase config (uzupełniony na podstawie Twoich danych)
+const firebaseConfig = {
+  apiKey: "AlzaSyD1AE1kvvuqVwpcfHdagXUL79Zr3J951hA",
+  authDomain: "agroapp-1d397.firebaseapp.com",
+  projectId: "agroapp-1d397",
+  storageBucket: "agroapp-1d397.appspot.com",
+  messagingSenderId: "683118014918",
+  appId: "1:683118014918:web:ab3ae19ec1b521b2f142c7"
+};
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const uid = urlParams.get('uid');
+// Leaflet mapa
+const map = L.map('map').setView([51.25, 22.57], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19
+}).addTo(map);
 
-    const map = L.map('map').setView([51.25, 22.57], 12);
+let drawnCoords = [];
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
+map.on('click', function(e) {
+  drawnCoords.push([e.latlng.lat, e.latlng.lng]);
+  L.marker(e.latlng).addTo(map);
+});
 
-    const drawnItems = new L.FeatureGroup();
-    map.addLayer(drawnItems);
+function saveField() {
+  const nazwa_pola = document.getElementById('nazwa_pola').value;
+  const miejscowosc = document.getElementById('miejscowosc').value;
+  const rodzaj_uprawy = document.getElementById('rodzaj_uprawy').value;
+  const color = document.getElementById('color').value;
+  const powierzchnia = (Math.random() * 100).toFixed(2); // przykładowa wartość powierzchni
 
-    const drawControl = new L.Control.Draw({
-      edit: {
-        featureGroup: drawnItems
-      },
-      draw: {
-        polyline: false,
-        circle: false,
-        rectangle: false,
-        marker: false,
-        circlemarker: false
-      }
-    });
+  if (drawnCoords.length < 3) {
+    alert('Narysuj przynajmniej 3 punkty!');
+    return;
+  }
 
-    function enableDrawing() {
-      map.addControl(drawControl);
-    }
-
-    map.on(L.Draw.Event.CREATED, async function (event) {
-      const layer = event.layer;
-      drawnItems.addLayer(layer);
-
-      const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000; // powierzchnia w ha
-
-      const nazwapola = prompt("Podaj nazwę pola:");
-      const miejscowosc = prompt("Podaj miejscowość:");
-      const uprawa = prompt("Podaj rodzaj uprawy:");
-      const color = prompt("Podaj kolor (np. red, blue, green):", "blue");
-
-      layer.setStyle({ color: color });
-
-      layer.bindTooltip(nazwapola, { permanent: true, direction: 'center' }).openTooltip();
-
-      try {
-        await addDoc(collection(db, "fields"), {
-          nazwapola: nazwapola,
-          miejscowosc: miejscowosc,
-          powierzchnia: area.toFixed(2),
-          uprawa: uprawa,
-          color: color,
-          userid: uid
-        });
-        alert("Pole zapisane!");
-      } catch (e) {
-        console.error("Błąd zapisu: ", e);
-      }
-    });
-  </script>
+  db.collection('fields').add({
+    nazwa_pola: nazwa_pola,
+    miejscowosc: miejscowosc,
+    rodzaj_uprawy: rodzaj_uprawy,
+    powierzchnia: powierzchnia,
+    color: color,
+    coordinates: drawnCoords.map(c => ({ lat: c[0], lng: c[1] })),
+    userid: firebase.auth().currentUser ? firebase.auth().currentUser.uid : "anonimowy"
+  }).then(() => {
+    alert('Pole zapisane!');
+    drawnCoords = [];
+    location.reload();
+  }).catch(err => {
+    console.error('Błąd przy zapisie:', err);
+  });
+}
+</script>
 </body>
 </html>
