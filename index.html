@@ -1,209 +1,82 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>AgroApp - Mapa Pól</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
-  
+  <meta charset="utf-8">
+  <title>Mapa Pól AgroApp</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AlzaSyD1AE1kvvuqVwpcfHdagXUL79Zr3J951hA",
+      authDomain: "agroapp-1d397.firebaseapp.com",
+      projectId: "agroapp-1d397",
+      storageBucket: "agroapp-1d397.appspot.com",
+      messagingSenderId: "683118014918",
+      appId: "1:683118014918:web:ab3ae19ec1b521b2f142c7"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const uid = urlParams.get('uid');
+
+    const map = L.map('map').setView([51.2465, 22.5684], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const drawnFields = {}; // Przechowujemy tutaj narysowane pola
+
+    function loadFields() {
+      const q = query(collection(db, "fields"), where("userid", "==", uid));
+      onSnapshot(q, (querySnapshot) => {
+        Object.values(drawnFields).forEach(layer => map.removeLayer(layer));
+
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data.coordinates) {
+            const polygon = L.polygon(data.coordinates, { color: data.color || 'blue' }).addTo(map);
+            polygon.bindTooltip(data.nazwapola || "(Brak nazwy)", { permanent: true, direction: "center" });
+            drawnFields[docSnap.id] = polygon;
+          }
+        });
+      });
+    }
+
+    loadFields();
+
+    map.on('click', function(e) {
+      const latlngs = [
+        [e.latlng.lat + 0.005, e.latlng.lng - 0.005],
+        [e.latlng.lat + 0.005, e.latlng.lng + 0.005],
+        [e.latlng.lat - 0.005, e.latlng.lng + 0.005],
+        [e.latlng.lat - 0.005, e.latlng.lng - 0.005]
+      ];
+
+      const newField = {
+        nazwapola: "Nowe pole",
+        miejscowosc: "Miejscowość",
+        rodzaj_uprawy: "Rodzaj uprawy",
+        powierzchnia: 1,
+        color: "blue",
+        userid: uid,
+        coordinates: latlngs
+      };
+
+      addDoc(collection(db, "fields"), newField);
+    });
+  </script>
   <style>
-    html, body, #map { height: 100%; margin: 0; }
-    #fieldForm {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      display: none;
-      z-index: 9999;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    }
-    .field-label {
-      background: none;
-      font-weight: bold;
-      padding: 2px 4px;
-      font-size: 14px;
-      border-radius: 5px;
-    }
-    .delete-button {
-      color: red;
-      cursor: pointer;
-      font-weight: bold;
-      margin-left: 10px;
-    }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map { height: 100%; }
   </style>
 </head>
 <body>
-
-<div id="map"></div>
-
-<div id="fieldForm">
-  <input type="text" id="fieldName" placeholder="Nazwa pola"><br>
-  <input type="text" id="cropType" placeholder="Rodzaj uprawy"><br>
-  <input type="text" id="village" placeholder="Miejscowość"><br>
-  <label>Kolor pola:</label>
-  <input type="color" id="color" value="#4caf50"><br>
-  <p id="areaOutput">Powierzchnia: 0 ha</p>
-  <button id="saveBtn">Zapisz pole</button>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
-
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-
-<script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAjzbeyCqqSg7KyM4NqGxQCrrxSz7rgC18",
-    authDomain: "agroapp-1d397.firebaseapp.com",
-    projectId: "agroapp-1d397",
-    storageBucket: "agroapp-1d397.appspot.com",
-    messagingSenderId: "683118014918",
-    appId: "1:683118014918:web:aba19ec1b52fb12f142c7"
-  };
-
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-
-  const params = new URLSearchParams(window.location.search);
-  const userId = params.get("uid");
-
-  if (!userId) {
-    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
-  }
-
-  const map = L.map('map').setView([51.25, 22.57], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
-
-  const drawnItems = new L.FeatureGroup();
-  map.addLayer(drawnItems);
-
-  const drawControl = new L.Control.Draw({
-    draw: {
-      polygon: true,
-      rectangle: false,
-      marker: false,
-      polyline: false,
-      circle: false,
-      circlemarker: false
-    },
-    edit: {
-      featureGroup: drawnItems,
-      edit: false,
-      remove: false
-    }
-  });
-  map.addControl(drawControl);
-
-  let currentPolygon = null;
-  let currentFieldId = null;
-
-  map.on('draw:created', function (e) {
-    currentPolygon = e.layer;
-    drawnItems.addLayer(currentPolygon);
-    showForm();
-    calculateArea(currentPolygon);
-  });
-
-  function calculateArea(layer) {
-    const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]);
-    const areaHa = (area / 10000).toFixed(2);
-    document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha`;
-  }
-
-  function showForm() {
-    document.getElementById('fieldForm').style.display = 'block';
-    document.getElementById('fieldName').value = '';
-    document.getElementById('cropType').value = '';
-    document.getElementById('village').value = '';
-    document.getElementById('color').value = '#4caf50';
-  }
-
-  function hideForm() {
-    document.getElementById('fieldForm').style.display = 'none';
-  }
-
-  document.getElementById('saveBtn').addEventListener('click', function () {
-    if (!currentPolygon || !userId) return;
-
-    const coords = currentPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
-    const area = L.GeometryUtil.geodesicArea(currentPolygon.getLatLngs()[0]);
-    const areaHa = area / 10000;
-    const fieldData = {
-      userId: userId,
-      name: document.getElementById('fieldName').value,
-      crop: document.getElementById('cropType').value,
-      village: document.getElementById('village').value,
-      color: document.getElementById('color').value,
-      coordinates: coords,
-      area_ha: areaHa,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
-    };
-
-    db.collection('fields').add(fieldData)
-      .then(() => {
-        hideForm();
-        drawnItems.clearLayers();
-        loadFields();
-      })
-      .catch((error) => {
-        console.error('Błąd zapisu:', error);
-      });
-  });
-
-  function loadFields() {
-    drawnItems.clearLayers();
-    db.collection('fields')
-      .where('userId', '==', userId)
-      .get()
-      .then(snapshot => {
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          const polygon = L.polygon(data.coordinates.map(c => [c.lat, c.lng]), {
-            color: data.color,
-            fillColor: data.color,
-            fillOpacity: 0.5
-          }).addTo(drawnItems);
-
-          const label = L.tooltip({
-            permanent: true,
-            direction: 'center',
-            className: 'field-label'
-          })
-          .setContent(data.name || 'Brak nazwy')
-          .setLatLng(polygon.getBounds().getCenter());
-
-          polygon.bindTooltip(label);
-
-          polygon.on('click', function () {
-            showForm();
-            currentPolygon = polygon;
-            currentFieldId = doc.id;
-            document.getElementById('fieldName').value = data.name;
-            document.getElementById('cropType').value = data.crop;
-            document.getElementById('village').value = data.village;
-            document.getElementById('color').value = data.color;
-            calculateArea(polygon);
-          });
-        });
-      })
-      .catch((error) => {
-        console.error('Błąd ładowania pól:', error);
-      });
-  }
-
-  loadFields();
-
-</script>
-
+  <div id="map"></div>
 </body>
 </html>
