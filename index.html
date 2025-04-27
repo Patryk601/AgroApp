@@ -1,18 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AgroApp - Map Fields</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <style>
-    #map { height: 400px; }
-    table, th, td { border: 1px solid black; border-collapse: collapse; }
-    th, td { padding: 5px; }<!DOCTYPE html>
-<html>
-<head>
   <meta charset="utf-8">
   <title>AgroApp - Mapa Pól</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -39,7 +27,7 @@
 <div id="map"></div>
 
 <script>
-  // KONFIGURACJA TWOJEGO FIREBASE
+  // Konfiguracja Firebase
   const firebaseConfig = {
     apiKey: "AlzaSyD1AE1kvvuqVwpcfHdagXUL79Zr3J951hA",
     authDomain: "agroapp-1d397.firebaseapp.com",
@@ -51,11 +39,11 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  // UID z URL (przekazany w FlutterFlow jako parametr np. ?uid=...)
+  // UID użytkownika
   const urlParams = new URLSearchParams(window.location.search);
   const uid = urlParams.get('uid');
 
-  // MAPA
+  // Mapa
   const map = L.map('map').setView([51.246, 22.568], 12);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -76,7 +64,7 @@
     drawnItems.addLayer(layer);
 
     const coordinates = layer.getLatLngs()[0].map(coord => ({ lat: coord.lat, lng: coord.lng }));
-    const powierzchnia = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000; // w ha
+    const powierzchnia = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000;
     const color = '#' + Math.floor(Math.random()*16777215).toString(16);
 
     const nazwa_pola = prompt('Podaj nazwę pola:');
@@ -91,19 +79,18 @@
           miejscowosc: miejscowosc,
           rodzaj_uprawy: rodzaj_uprawy,
           powierzchnia: powierzchnia.toFixed(2),
-          color: color,
-          coordinates: coordinates
+         
         });
-        alert('Pole zapisane poprawnie!');
+        alert('Pole zapisane!');
       } catch (error) {
-        console.error('Błąd zapisu do Firestore:', error);
+        console.error('Błąd zapisu:', error);
       }
     } else {
-      alert('Wszystkie dane są wymagane!');
+      alert('Wypełnij wszystkie pola!');
     }
   });
 
-  // Wczytywanie zapisanych pól (opcjonalnie jeśli chcesz od razu rysować zapisane pola)
+  // Wczytaj istniejące pola
   async function loadFields() {
     const snapshot = await db.collection('fields').where('userid', '==', uid).get();
     snapshot.forEach(doc => {
@@ -115,120 +102,6 @@
 
   loadFields();
 </script>
-
-</body>
-</html>
-
-  </style>
-</head>
-<body>
-
-<h3>Dodaj pole</h3>
-<div id="map"></div>
-<br>
-<form id="fieldForm">
-  <input type="text" id="nazwa_pola" placeholder="Nazwa pola" required>
-  <input type="text" id="miejscowosc" placeholder="Miejscowość" required>
-  <input type="text" id="rodzaj_uprawy" placeholder="Rodzaj uprawy" required>
-  <input type="color" id="color" value="#3388ff">
-  <button type="submit">Zapisz pole</button>
-</form>
-
-<h3>Twoje pola:</h3>
-<table id="fieldsTable">
-  <thead>
-    <tr>
-      <th>Nazwa pola</th>
-      <th>Miejscowość</th>
-      <th>Powierzchnia (ha)</th>
-      <th>Rodzaj uprawy</th>
-      <th>Usuń</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
-
-<script>
-  // Firebase config (UZUPEŁNIJ swoimi danymi!)
-  const firebaseConfig = {
-    apiKey: "AlzaSyD1AE1kvvuqVwpcfHdagXUL79Zr3J951hA",
-    authDomain: "agroapp-1d397.firebaseapp.com",
-    projectId: "agroapp-1d397",
-    storageBucket: "agroapp-1d397.appspot.com",
-    messagingSenderId: "683118014918",
-    appId: "1:683118014918:web:ab3ae19ec1b521b2f142c7"
-  };
-
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-
-  let map = L.map('map').setView([51.25, 22.57], 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19
-  }).addTo(map);
-
-  let drawnLayer = null;
-  let coords = [];
-
-  map.on('click', function(e) {
-    coords.push([e.latlng.lat, e.latlng.lng]);
-    if (drawnLayer) map.removeLayer(drawnLayer);
-    drawnLayer = L.polygon(coords, {color: document.getElementById('color').value}).addTo(map);
-  });
-
-  function calculateArea(coords) {
-    const turfCoords = coords.map(c => [c[1], c[0]]);
-    const polygon = turf.polygon([[...turfCoords, turfCoords[0]]]);
-    return turf.area(polygon) / 10000;
-  }
-
-  document.getElementById('fieldForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!coords.length) { alert("Najpierw zaznacz pole na mapie!"); return; }
-    const powierzchnia = calculateArea(coords).toFixed(2);
-    const doc = {
-      nazwa_pola: document.getElementById('nazwa_pola').value,
-      miejscowosc: document.getElementById('miejscowosc').value,
-      rodzaj_uprawy: document.getElementById('rodzaj_uprawy').value,
-      powierzchnia: powierzchnia,
-      userid: "test-uid"
-    };
-    await db.collection('fields').add(doc);
-    coords = [];
-    if (drawnLayer) map.removeLayer(drawnLayer);
-    document.getElementById('fieldForm').reset();
-    loadFields();
-  });
-
-  async function loadFields() {
-    const tableBody = document.querySelector('#fieldsTable tbody');
-    tableBody.innerHTML = '';
-    const snapshot = await db.collection('fields').get();
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const row = `<tr>
-        <td>${data.nazwa_pola}</td>
-        <td>${data.miejscowosc}</td>
-        <td>${data.powierzchnia}</td>
-        <td>${data.rodzaj_uprawy}</td>
-        <td><button onclick="deleteField('${doc.id}')">Usuń</button></td>
-      </tr>`;
-      tableBody.innerHTML += row;
-    });
-  }
-
-  async function deleteField(id) {
-    if (confirm('Na pewno usunąć to pole?')) {
-      await db.collection('fields').doc(id).delete();
-      loadFields();
-    }
-  }
-
-  loadFields();
-</script>
-
-<!-- TURF.JS do obliczania powierzchni -->
-<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
 </body>
 </html>
