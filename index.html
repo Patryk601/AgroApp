@@ -1,27 +1,26 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>AgroApp</title>
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <meta charset="utf-8" />
+  <title>AgroApp - Mapa</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
   <style>
-    #map { height: 80vh; }
-    #field-list { padding: 10px; }
+    #map { height: 500px; }
   </style>
 </head>
 <body>
-
-<h1>Page Title</h1>
-<div id="map"></div>
-<div id="field-list"></div>
+  <button id="save">Dodaj pole</button>
+  <div id="map"></div>
 
 <script>
-  // Konfiguracja Firebase
   const firebaseConfig = {
-    apiKey: "AlzaSyD1AE1kvvuqVwpcfHdagXUL79Zr3J951hA",
+    apiKey: "AIzaSyD1AE1kvvuqVwpcfHdagXUL79Zr3J951hA",
     authDomain: "agroapp-1d397.firebaseapp.com",
     projectId: "agroapp-1d397",
     storageBucket: "agroapp-1d397.appspot.com",
@@ -29,107 +28,71 @@
     appId: "1:683118014918:web:ab3ae19ec1b521b2f142c7"
   };
 
-  // Inicjalizacja Firebase
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  // Inicjalizacja mapy
-  const map = L.map('map').setView([51.25, 22.57], 12);
+  const uid = new URLSearchParams(window.location.search).get('uid');
+
+  const map = L.map('map').setView([51.2465, 22.5684], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap'
+    attribution: '© OpenStreetMap contributors'
   }).addTo(map);
 
-  let drawnCoordinates = [];
-  let drawnPolygon = null;
-  const fieldsCollection = db.collection('fields');
+  const drawnItems = new L.FeatureGroup();
+  map.addLayer(drawnItems);
 
-  // Funkcja rysowania kliknięć
-  map.on('click', function(e) {
-    drawnCoordinates.push([e.latlng.lat, e.latlng.lng]);
+  const drawControl = new L.Control.Draw({
+    edit: { featureGroup: drawnItems },
+    draw: { polygon: true, marker: false, polyline: false, circle: false, rectangle: false, circlemarker: false }
+  });
+  map.addControl(drawControl);
 
-    if (drawnPolygon) {
-      map.removeLayer(drawnPolygon);
-    }
-    drawnPolygon = L.polygon(drawnCoordinates).addTo(map);
+  map.on(L.Draw.Event.CREATED, function (e) {
+    const layer = e.layer;
+    drawnItems.addLayer(layer);
   });
 
-  // Funkcja dodawania pola
-  async function addField() {
-    const uid = "test_user_id"; // <- tutaj wstawiaj dynamicznie ID użytkownika jeśli masz logowanie
-    const nazwaPola = prompt("Podaj nazwę pola:");
-    const miejscowosc = prompt("Podaj miejscowość:");
-    const rodzajUprawy = prompt("Podaj rodzaj uprawy:");
-    const powierzchnia = 1.23; // <- możesz podstawić obliczoną powierzchnię
-    const color = "#3388ff"; // <- kolor domyślny lub z inputa
-
-    if (!nazwaPola || drawnCoordinates.length === 0) {
-      alert("Musisz narysować pole i podać nazwę!");
+  document.getElementById('save').onclick = async () => {
+    if (drawnItems.getLayers().length === 0) {
+      alert('Najpierw narysuj pole!');
       return;
     }
+    const layer = drawnItems.getLayers()[0];
+    const coordinates = layer.getLatLngs()[0].map(latlng => ({ lat: latlng.lat, lng: latlng.lng }));
 
-    const newFieldData = {
-      userid: uid,
-      nazwa_pola: nazwaPola,
-      miejscowosc: miejscowosc,
-      rodzaj_uprawy: rodzajUprawy,
-      powierzchnia: powierzchnia,
-      color: color,
-      coordinates: JSON.stringify(drawnCoordinates)
+    const data = {
+      nazwa_pola: "Nowe Pole",
+      miejscowosc: "Lublin",
+      rodzaj_uprawy: "Zboze",
+      powierzchnia: 1.5,
+      color: "#3388ff",
+      coordinates: coordinates,
+      userid: uid
     };
 
-    await fieldsCollection.add(newFieldData);
-
-    drawnCoordinates = [];
-    if (drawnPolygon) {
-      map.removeLayer(drawnPolygon);
-      drawnPolygon = null;
+    try {
+      await db.collection("fields").add(data);
+      alert('Pole zapisane!');
+      location.reload();
+    } catch (error) {
+      console.error("Błąd zapisu: ", error);
     }
+  };
 
-    await loadFields();
-  }
-
-  // Funkcja ładowania pól
-  async function loadFields() {
-    const snapshot = await fieldsCollection.get();
-    document.getElementById('field-list').innerHTML = "";
-    map.eachLayer(layer => {
-      if (layer instanceof L.Polygon) {
-        map.removeLayer(layer);
-      }
-    });
-
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const coordinatesArray = JSON.parse(data.coordinates);
-
-      const polygon = L.polygon(coordinatesArray, { color: data.color || '#3388ff' }).addTo(map);
-      polygon.bindTooltip(data.nazwa_pola || "Brak nazwy", { permanent: true, direction: "center" });
-
-      const item = document.createElement('div');
-      item.innerHTML = `
-        <b>${data.nazwa_pola}</b><br>
-        Miejscowość: ${data.miejscowosc}<br>
-        Rodzaj uprawy: ${data.rodzaj_uprawy}<br>
-        Powierzchnia: ${data.powierzchnia} ha
-        <hr/>
-      `;
-      document.getElementById('field-list').appendChild(item);
+  if (uid) {
+    db.collection("fields").where("userid", "==", uid).get().then(snapshot => {
+      snapshot.forEach(doc => {
+        const field = doc.data();
+        if (field.coordinates) {
+          const latlngs = field.coordinates.map(c => [c.lat, c.lng]);
+          const polygon = L.polygon(latlngs, { color: field.color || '#3388ff' }).addTo(map);
+          polygon.bindPopup(`<b>${field.nazwa_pola}</b><br>${field.miejscowosc}<br>${field.rodzaj_uprawy}`);
+        }
+      });
+    }).catch(error => {
+      console.error("Błąd odczytu: ", error);
     });
   }
-
-  // Na start wczytaj wszystkie pola
-  loadFields();
-
-  // Dodaj przycisk do dodawania nowego pola
-  const button = document.createElement('button');
-  button.textContent = "Dodaj pole";
-  button.style.position = 'absolute';
-  button.style.top = '10px';
-  button.style.right = '10px';
-  button.style.zIndex = 1000;
-  button.onclick = addField;
-  document.body.appendChild(button);
 </script>
-
 </body>
 </html>
