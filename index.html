@@ -2,13 +2,12 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8">
-  <title>Mapa pól - AgroApp</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroApp – Mapa pól</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
     html, body, #map { height: 100%; margin: 0; }
-    .no-background { background: none; border: none; box-shadow: none; color: black; font-weight: bold; }
     #fieldForm {
       display: none;
       position: absolute;
@@ -17,6 +16,13 @@
       background: white;
       padding: 10px;
       z-index: 9999;
+    }
+    .no-background {
+      background: none !important;
+      border: none !important;
+      color: black;
+      font-weight: bold;
+      font-size: 12px;
     }
   </style>
 </head>
@@ -32,78 +38,67 @@
   <input type="color" id="color" value="#4caf50" /><br />
   <p id="areaOutput">Powierzchnia: 0 ha</p>
   <button onclick="saveField()">Zapisz pole</button>
+  <button onclick="deleteField()">Usuń pole</button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+
+<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
 <script>
   const firebaseConfig = {
-    apiKey: "twojApiKey",
-    authDomain: "twojProjekt.firebaseapp.com",
-    projectId: "twojProjekt",
-    storageBucket: "twojProjekt.appspot.com",
-    messagingSenderId: "xxx",
-    appId: "xxx"
+    apiKey: "twoje-api-key",
+    authDomain: "twoj-projekt.firebaseapp.com",
+    projectId: "twoj-projekt",
+    storageBucket: "twoj-projekt.appspot.com",
+    messagingSenderId: "twoj-sender-id",
+    appId: "twoj-app-id"
   };
-
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
   const params = new URLSearchParams(window.location.search);
   const userId = params.get("uid");
 
-  const map = L.map('map').setView([51.25, 22.57], 12);
-  const drawnItems = new L.FeatureGroup();
-  map.addLayer(drawnItems);
+  let drawnItems = new L.FeatureGroup();
+  let selectedFieldId = null; // przechowuje ID klikniętego pola
 
+  const map = L.map('map').setView([51.25, 22.57], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
+  map.addLayer(drawnItems);
+
   const drawControl = new L.Control.Draw({
-    draw: {
-      polygon: true,
-      rectangle: false,
-      circle: false,
-      marker: false,
-      polyline: false,
-      circlemarker: false
-    },
-    edit: {
-      featureGroup: drawnItems
-    }
+    draw: { polygon: true, rectangle: false, marker: false, polyline: false, circle: false, circlemarker: false },
+    edit: { featureGroup: drawnItems }
   });
   map.addControl(drawControl);
 
-  let drawnPolygon = null;
+  let currentPolygon = null;
 
   map.on('draw:created', function (e) {
-    drawnPolygon = e.layer;
-    drawnItems.addLayer(drawnPolygon);
-    calculateArea(drawnPolygon);
-    document.getElementById('fieldForm').style.display = 'block';
-  });
-
-  function calculateArea(polygon) {
-    const area = L.GeometryUtil.geodesicArea(polygon.getLatLngs()[0]);
+    currentPolygon = e.layer;
+    drawnItems.addLayer(currentPolygon);
+    const area = L.GeometryUtil.geodesicArea(currentPolygon.getLatLngs()[0]);
     const areaHa = (area / 10000).toFixed(2);
     const areaAr = (area / 100).toFixed(2);
     document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
-  }
+    document.getElementById('fieldForm').style.display = 'block';
+    selectedFieldId = null; // resetujemy ID jeśli to nowe pole
+  });
 
   function saveField() {
-    if (!drawnPolygon || !userId) return;
+    if (!currentPolygon && !selectedFieldId) return;
 
-    const coords = drawnPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
-    const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
-    const areaHa = area / 10000;
-    const areaAr = area / 100;
-
+    const coords = currentPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
+    const area = L.GeometryUtil.geodesicArea(currentPolygon.getLatLngs()[0]);
     const fieldData = {
       userId: userId,
       name: document.getElementById('fieldName').value,
@@ -111,44 +106,55 @@
       village: document.getElementById('village').value,
       color: document.getElementById('color').value,
       coordinates: coords,
-      area_ha: areaHa,
-      area_ar: areaAr,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      area_ha: area / 10000,
+      area_ar: area / 100,
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
-    db.collection("fields").add(fieldData)
-      .then(() => {
-        alert('Pole zapisane!');
-        document.getElementById('fieldForm').style.display = 'none';
-        loadFields(); // <-- kluczowe! załaduj ponownie wszystkie pola
-      })
-      .catch(error => {
-        console.error('Błąd zapisu: ', error);
-      });
+    if (selectedFieldId) {
+      db.collection("fields").doc(selectedFieldId).update(fieldData);
+    } else {
+      db.collection("fields").add(fieldData);
+    }
+
+    document.getElementById('fieldForm').style.display = 'none';
+    currentPolygon = null;
+    selectedFieldId = null;
+  }
+
+  function deleteField() {
+    if (selectedFieldId) {
+      db.collection("fields").doc(selectedFieldId).delete();
+      document.getElementById('fieldForm').style.display = 'none';
+      selectedFieldId = null;
+    }
   }
 
   function loadFields() {
-    drawnItems.clearLayers(); // czyść wszystko najpierw
-    db.collection("fields").where("userId", "==", userId).get().then(querySnapshot => {
-      querySnapshot.forEach(doc => {
-        const field = doc.data();
-        const polygon = L.polygon(field.coordinates, { color: field.color }).addTo(drawnItems);
-        polygon.bindTooltip(field.name, { permanent: true, direction: 'center', className: 'no-background' });
-        polygon.on('click', function () {
-          document.getElementById('fieldName').value = field.name;
-          document.getElementById('cropType').value = field.crop;
-          document.getElementById('village').value = field.village;
-          document.getElementById('color').value = field.color;
-          document.getElementById('fieldForm').style.display = 'block';
+    drawnItems.clearLayers();
+    db.collection("fields")
+      .where("userId", "==", userId)
+      .onSnapshot((querySnapshot) => {
+        drawnItems.clearLayers();
+        querySnapshot.forEach(doc => {
+          const field = doc.data();
+          const polygon = L.polygon(field.coordinates, { color: field.color }).addTo(drawnItems);
+          polygon.bindTooltip(field.name, { permanent: true, direction: 'center', className: 'no-background' });
+          polygon.on('click', function () {
+            document.getElementById('fieldName').value = field.name;
+            document.getElementById('cropType').value = field.crop;
+            document.getElementById('village').value = field.village;
+            document.getElementById('color').value = field.color;
+            document.getElementById('areaOutput').innerText = `Powierzchnia: ${field.area_ha.toFixed(2)} ha (${field.area_ar.toFixed(2)} arów)`;
+            document.getElementById('fieldForm').style.display = 'block';
+            selectedFieldId = doc.id;
+            currentPolygon = polygon;
+          });
         });
       });
-    });
   }
 
-  if (userId) {
-    loadFields(); // ← na starcie wczytaj
-  }
+  loadFields();
 </script>
 
 </body>
