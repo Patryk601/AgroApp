@@ -40,7 +40,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
 
-<!-- Firebase v8 (działa w HTML) -->
+<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
@@ -111,6 +111,16 @@
     const areaHa = area / 10000;
     const areaAr = area / 100;
 
+    // Oblicz środek pola (średnia wszystkich punktów)
+    let centerLat = 0;
+    let centerLng = 0;
+    coords.forEach(coord => {
+      centerLat += coord.lat;
+      centerLng += coord.lng;
+    });
+    centerLat = centerLat / coords.length;
+    centerLng = centerLng / coords.length;
+
     const fieldData = {
       userId: userId,
       name: document.getElementById("fieldName").value,
@@ -120,7 +130,9 @@
       coordinates: coords,
       area_ha: areaHa,
       area_ar: areaAr,
-      created_at: firebase.firestore.FieldValue.serverTimestamp()
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      center_lat: centerLat,
+      center_lng: centerLng,
     };
 
     db.collection("fields").add(fieldData)
@@ -128,7 +140,7 @@
         alert("Pole zapisane!");
         document.getElementById("fieldForm").style.display = "none";
         drawnItems.clearLayers();
-        location.reload(); // automatyczne odświeżenie mapy po zapisie
+        location.reload();
       })
       .catch((error) => {
         console.error("Błąd zapisu: ", error);
@@ -166,11 +178,13 @@
   }
 
   loadFields();
+
+  // Funkcja odbierająca sygnał z FlutterFlow
   window.centerMapFromFlutter = function(lat, lng) {
     if (map) {
-        map.setView([lat, lng], map.getZoom()); // Przesuń mapę na wskazane współrzędne
+      map.setView([lat, lng], map.getZoom());
     }
-}
+  }
 
 </script>
 
