@@ -59,24 +59,26 @@
   const userId = params.get("uid");
 
   if (!userId) {
-    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
+    alert("Brak identyfikatora użytkownika!");
   }
 
   let drawnPolygon = null;
   let drawnItems = new L.FeatureGroup();
   let map;
 
-  let mapCenter = [51.25, 22.57];
-  let mapZoom = 12;
-
+  // 1. Najpierw pobieramy ostatnią pozycję mapy z Firestore
   db.collection("map_position").doc(userId).get().then(doc => {
+    let center = [51.25, 22.57];
+    let zoom = 12;
+
     if (doc.exists) {
       const data = doc.data();
-      mapCenter = [data.lat || 51.25, data.lng || 22.57];
-      mapZoom = data.zoom || 12;
+      if (data.lat && data.lng) center = [data.lat, data.lng];
+      if (data.zoom) zoom = data.zoom;
     }
-  }).finally(() => {
-    map = L.map('map').setView(mapCenter, mapZoom);
+
+    // 2. Inicjalizujemy mapę dopiero po odczytaniu danych
+    map = L.map('map').setView(center, zoom);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -135,6 +137,7 @@
     const areaHa = area / 10000;
     const areaAr = area / 100;
 
+    // Oblicz środek pola
     let centerLat = 0;
     let centerLng = 0;
     coords.forEach(coord => {
