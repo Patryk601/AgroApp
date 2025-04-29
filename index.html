@@ -39,6 +39,8 @@
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+
+<!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
@@ -59,26 +61,32 @@
   const userId = params.get("uid");
 
   if (!userId) {
-    alert("Brak identyfikatora użytkownika!");
+    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
   }
 
-  let drawnPolygon = null;
-  let drawnItems = new L.FeatureGroup();
   let map;
+  let drawnPolygon = null;
+  const drawnItems = new L.FeatureGroup();
 
-  // 1. Najpierw pobieramy ostatnią pozycję mapy z Firestore
-  db.collection("map_position").doc(userId).get().then(doc => {
-    let center = [51.25, 22.57];
-    let zoom = 12;
+  async function initializeMap() {
+    // Domyślna pozycja (Lublin)
+    let initialLat = 51.25;
+    let initialLng = 22.57;
+    let initialZoom = 12;
 
-    if (doc.exists) {
-      const data = doc.data();
-      if (data.lat && data.lng) center = [data.lat, data.lng];
-      if (data.zoom) zoom = data.zoom;
+    try {
+      const doc = await db.collection("map_position").doc(userId).get();
+      if (doc.exists) {
+        const data = doc.data();
+        initialLat = data.lat || initialLat;
+        initialLng = data.lng || initialLng;
+        initialZoom = data.zoom || initialZoom;
+      }
+    } catch (e) {
+      console.warn("Nie udało się pobrać pozycji mapy:", e);
     }
 
-    // 2. Inicjalizujemy mapę dopiero po odczytaniu danych
-    map = L.map('map').setView(center, zoom);
+    map = L.map('map').setView([initialLat, initialLng], initialZoom);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -103,6 +111,17 @@
     });
     map.addControl(drawControl);
 
+    // zapisz pozycję mapy przy przesunięciu lub zoomie
+    map.on('moveend', () => {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      db.collection("map_position").doc(userId).set({
+        lat: center.lat,
+        lng: center.lng,
+        zoom: zoom
+      }).catch((e) => console.error("Błąd zapisu pozycji mapy:", e));
+    });
+
     map.on('draw:created', function (e) {
       drawnPolygon = e.layer;
       drawnItems.addLayer(drawnPolygon);
@@ -115,19 +134,8 @@
       document.getElementById('fieldForm').style.display = 'block';
     });
 
-    map.on('moveend', function () {
-      const center = map.getCenter();
-      const zoom = map.getZoom();
-
-      db.collection("map_position").doc(userId).set({
-        lat: center.lat,
-        lng: center.lng,
-        zoom: zoom
-      });
-    });
-
     loadFields();
-  });
+  }
 
   function saveField() {
     if (!drawnPolygon || !userId) return;
@@ -137,12 +145,10 @@
     const areaHa = area / 10000;
     const areaAr = area / 100;
 
-    // Oblicz środek pola
-    let centerLat = 0;
-    let centerLng = 0;
-    coords.forEach(coord => {
-      centerLat += coord.lat;
-      centerLng += coord.lng;
+    let centerLat = 0, centerLng = 0;
+    coords.forEach(p => {
+      centerLat += p.lat;
+      centerLng += p.lng;
     });
     centerLat /= coords.length;
     centerLng /= coords.length;
@@ -203,6 +209,10 @@
       });
   }
 
+  // Start mapy po załadowaniu
+  initializeMap();
+
+  // Do centrowania z FlutterFlow
   window.centerMapFromFlutter = function(lat, lng) {
     if (map) {
       map.setView([lat, lng], map.getZoom());
