@@ -64,44 +64,70 @@
     alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
   }
 
+  let map;
   let drawnPolygon = null;
   let drawnItems = new L.FeatureGroup();
-  const map = L.map('map').setView([51.25, 22.57], 12);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
+  async function initMap() {
+    const doc = await db.collection("map_position").doc(userId).get();
+    let lat = 51.25, lng = 22.57, zoom = 12;
 
-  map.addLayer(drawnItems);
-
-  const drawControl = new L.Control.Draw({
-    draw: {
-      polygon: true,
-      rectangle: false,
-      marker: false,
-      polyline: false,
-      circle: false,
-      circlemarker: false
-    },
-    edit: {
-      featureGroup: drawnItems,
-      remove: true
+    if (doc.exists) {
+      const data = doc.data();
+      lat = data.lat || lat;
+      lng = data.lng || lng;
+      zoom = data.zoom || zoom;
     }
-  });
-  map.addControl(drawControl);
 
-  map.on('draw:created', function (e) {
-    drawnPolygon = e.layer;
-    drawnItems.addLayer(drawnPolygon);
+    map = L.map('map').setView([lat, lng], zoom);
 
-    const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
-    const areaHa = (area / 10000).toFixed(2);
-    const areaAr = (area / 100).toFixed(2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
 
-    document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
-    document.getElementById('fieldForm').style.display = 'block';
-  });
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: true,
+        rectangle: false,
+        marker: false,
+        polyline: false,
+        circle: false,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: drawnItems,
+        remove: true
+      }
+    });
+    map.addControl(drawControl);
+
+    map.on('draw:created', function (e) {
+      drawnPolygon = e.layer;
+      drawnItems.addLayer(drawnPolygon);
+
+      const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
+      const areaHa = (area / 10000).toFixed(2);
+      const areaAr = (area / 100).toFixed(2);
+
+      document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
+      document.getElementById('fieldForm').style.display = 'block';
+    });
+
+    map.on('moveend', () => {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      db.collection("map_position").doc(userId).set({
+        lat: center.lat,
+        lng: center.lng,
+        zoom: zoom
+      });
+    });
+
+    loadFields();
+  }
 
   function saveField() {
     if (!drawnPolygon || !userId) return;
@@ -111,15 +137,13 @@
     const areaHa = area / 10000;
     const areaAr = area / 100;
 
-    // Oblicz środek pola (średnia wszystkich punktów)
-    let centerLat = 0;
-    let centerLng = 0;
+    let centerLat = 0, centerLng = 0;
     coords.forEach(coord => {
       centerLat += coord.lat;
       centerLng += coord.lng;
     });
-    centerLat = centerLat / coords.length;
-    centerLng = centerLng / coords.length;
+    centerLat /= coords.length;
+    centerLng /= coords.length;
 
     const fieldData = {
       userId: userId,
@@ -170,22 +194,20 @@
             document.getElementById('cropType').value = data.crop;
             document.getElementById('village').value = data.village;
             document.getElementById('color').value = data.color || "#4caf50";
-
             document.getElementById('fieldForm').style.display = 'block';
           });
         });
       });
   }
 
-  loadFields();
-
-  // Funkcja odbierająca sygnał z FlutterFlow
   window.centerMapFromFlutter = function(lat, lng) {
     if (map) {
       map.setView([lat, lng], map.getZoom());
     }
   }
 
+  // start
+  initMap();
 </script>
 
 </body>
