@@ -39,8 +39,6 @@
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
-
-<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
@@ -64,22 +62,21 @@
     alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
   }
 
-  let map;
   let drawnPolygon = null;
   let drawnItems = new L.FeatureGroup();
+  let map;
 
-  async function initMap() {
-    const doc = await db.collection("map_position").doc(userId).get();
-    let lat = 51.25, lng = 22.57, zoom = 12;
+  let mapCenter = [51.25, 22.57];
+  let mapZoom = 12;
 
+  db.collection("map_position").doc(userId).get().then(doc => {
     if (doc.exists) {
       const data = doc.data();
-      lat = data.lat || lat;
-      lng = data.lng || lng;
-      zoom = data.zoom || zoom;
+      mapCenter = [data.lat || 51.25, data.lng || 22.57];
+      mapZoom = data.zoom || 12;
     }
-
-    map = L.map('map').setView([lat, lng], zoom);
+  }).finally(() => {
+    map = L.map('map').setView(mapCenter, mapZoom);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -116,9 +113,10 @@
       document.getElementById('fieldForm').style.display = 'block';
     });
 
-    map.on('moveend', () => {
+    map.on('moveend', function () {
       const center = map.getCenter();
       const zoom = map.getZoom();
+
       db.collection("map_position").doc(userId).set({
         lat: center.lat,
         lng: center.lng,
@@ -127,7 +125,7 @@
     });
 
     loadFields();
-  }
+  });
 
   function saveField() {
     if (!drawnPolygon || !userId) return;
@@ -137,7 +135,8 @@
     const areaHa = area / 10000;
     const areaAr = area / 100;
 
-    let centerLat = 0, centerLng = 0;
+    let centerLat = 0;
+    let centerLng = 0;
     coords.forEach(coord => {
       centerLat += coord.lat;
       centerLng += coord.lng;
@@ -154,9 +153,9 @@
       coordinates: coords,
       area_ha: areaHa,
       area_ar: areaAr,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
       center_lat: centerLat,
       center_lng: centerLng,
+      created_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
     db.collection("fields").add(fieldData)
@@ -194,6 +193,7 @@
             document.getElementById('cropType').value = data.crop;
             document.getElementById('village').value = data.village;
             document.getElementById('color').value = data.color || "#4caf50";
+
             document.getElementById('fieldForm').style.display = 'block';
           });
         });
@@ -204,10 +204,7 @@
     if (map) {
       map.setView([lat, lng], map.getZoom());
     }
-  }
-
-  // start
-  initMap();
+  };
 </script>
 
 </body>
