@@ -60,11 +60,12 @@
   const params = new URLSearchParams(window.location.search);
   const userId = params.get("uid");
 
+  console.log("➡️ Otrzymany userId z parametru URL:", userId);
+
   if (!userId) {
     alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
   }
 
-  // Spróbuj odczytać ostatnią pozycję z localStorage
   const savedLat = localStorage.getItem("mapLat");
   const savedLng = localStorage.getItem("mapLng");
   const savedZoom = localStorage.getItem("mapZoom");
@@ -84,7 +85,6 @@
 
   map.addLayer(drawnItems);
 
-  // Zapisuj pozycję mapy przy każdym przesunięciu
   map.on('moveend', function () {
     const center = map.getCenter();
     localStorage.setItem("mapLat", center.lat);
@@ -195,7 +195,6 @@
 
   loadFields();
 
-  // Funkcja odbierająca sygnał z FlutterFlow
   window.centerMapFromFlutter = function(lat, lng) {
     if (map) {
       map.setView([lat, lng], map.getZoom());
