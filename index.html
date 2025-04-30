@@ -7,10 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-    }
+    html, body, #map { height: 100%; margin: 0; }
     #fieldForm {
       display: none;
       position: absolute;
@@ -36,6 +33,7 @@
   <button onclick="saveField()">Zapisz pole</button>
 </div>
 
+<!-- Leaflet + Draw + Geometry -->
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
@@ -43,6 +41,7 @@
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
 
 <script>
   const firebaseConfig = {
@@ -57,16 +56,7 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  const params = new URLSearchParams(window.location.search);
-  const userId = params.get("uid");
-
-  console.log("Odczytany UID z URL:", userId);
-
-  if (!userId) {
-    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
-  }
-
-  // Map start position
+  // --- Map setup
   const savedLat = localStorage.getItem("mapLat");
   const savedLng = localStorage.getItem("mapLng");
   const savedZoom = localStorage.getItem("mapZoom");
@@ -75,18 +65,18 @@
   let startLng = savedLng ? parseFloat(savedLng) : 22.57;
   let startZoom = savedZoom ? parseInt(savedZoom) : 12;
 
-  let drawnPolygon = null;
+  let map = L.map('map').setView([startLat, startLng], startZoom);
   let drawnItems = new L.FeatureGroup();
-  const map = L.map('map').setView([startLat, startLng], startZoom);
+  let drawnPolygon = null;
+  let currentUserId = null;
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
-
   map.addLayer(drawnItems);
 
-  map.on('moveend', function () {
+  map.on('moveend', () => {
     const center = map.getCenter();
     localStorage.setItem("mapLat", center.lat);
     localStorage.setItem("mapLng", center.lng);
@@ -102,10 +92,7 @@
       circle: false,
       circlemarker: false
     },
-    edit: {
-      featureGroup: drawnItems,
-      remove: true
-    }
+    edit: { featureGroup: drawnItems, remove: true }
   });
   map.addControl(drawControl);
 
@@ -122,24 +109,23 @@
   });
 
   function saveField() {
-    if (!drawnPolygon || !userId) return;
+    if (!drawnPolygon || !currentUserId) return;
 
     const coords = drawnPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
     const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
     const areaHa = area / 10000;
     const areaAr = area / 100;
 
-    let centerLat = 0;
-    let centerLng = 0;
+    let centerLat = 0, centerLng = 0;
     coords.forEach(coord => {
       centerLat += coord.lat;
       centerLng += coord.lng;
     });
-    centerLat = centerLat / coords.length;
-    centerLng = centerLng / coords.length;
+    centerLat /= coords.length;
+    centerLng /= coords.length;
 
     const fieldData = {
-      userId: userId,
+      userId: currentUserId,
       name: document.getElementById("fieldName").value,
       crop: document.getElementById("cropType").value,
       village: document.getElementById("village").value,
@@ -147,9 +133,9 @@
       coordinates: coords,
       area_ha: areaHa,
       area_ar: areaAr,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
       center_lat: centerLat,
-      center_lng: centerLng
+      center_lng: centerLng,
+      created_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
     db.collection("fields").add(fieldData)
@@ -159,52 +145,51 @@
         drawnItems.clearLayers();
         location.reload();
       })
-      .catch((error) => {
+      .catch(error => {
         console.error("Błąd zapisu: ", error);
-        alert("Wystąpił błąd podczas zapisu pola.");
+        alert("Błąd zapisu pola.");
       });
   }
 
-  function loadFields() {
-    if (!userId) return;
+  function loadFields(userId) {
+    db.collection("fields").where("userId", "==", userId).get().then((querySnapshot) => {
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const polygon = L.polygon(data.coordinates.map(c => [c.lat, c.lng]), {
+          color: data.color || "#4caf50"
+        }).addTo(drawnItems);
 
-    db.collection("fields")
-      .where("userId", "==", userId)
-      .get()
-      .then((querySnapshot) => {
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          const polygon = L.polygon(data.coordinates.map(c => [c.lat, c.lng]), {
-            color: data.color || "#4caf50"
-          }).addTo(drawnItems);
+        polygon.bindTooltip(data.name, {
+          permanent: true,
+          direction: "center",
+          className: "field-label"
+        });
 
-          polygon.bindTooltip(data.name, {
-            permanent: true,
-            direction: "center",
-            className: "field-label"
-          });
+        polygon.on('click', function () {
+          document.getElementById('fieldName').value = data.name;
+          document.getElementById('cropType').value = data.crop;
+          document.getElementById('village').value = data.village;
+          document.getElementById('color').value = data.color || "#4caf50";
 
-          polygon.on('click', function () {
-            document.getElementById('fieldName').value = data.name;
-            document.getElementById('cropType').value = data.crop;
-            document.getElementById('village').value = data.village;
-            document.getElementById('color').value = data.color || "#4caf50";
-            document.getElementById('fieldForm').style.display = 'block';
-          });
+          document.getElementById('fieldForm').style.display = 'block';
         });
       });
+    });
   }
 
-  loadFields();
-
-  // Dodatkowo udostępnij UID do debugowania
-  console.log("Zapisane UID:", userId);
-
-  // Odbiór pozycji z FlutterFlow
-  window.centerMapFromFlutter = function(lat, lng) {
-    if (map) {
-      map.setView([lat, lng], map.getZoom());
+  // 🔐 Pobierz UID aktualnego użytkownika
+  firebase.auth().onAuthStateChanged(function(user) {
+    if (user) {
+      currentUserId = user.uid;
+      loadFields(currentUserId);
+    } else {
+      alert("Nie jesteś zalogowany.");
     }
+  });
+
+  // FlutterFlow sygnał ręcznego centrowania
+  window.centerMapFromFlutter = function(lat, lng) {
+    if (map) map.setView([lat, lng], map.getZoom());
   };
 </script>
 
