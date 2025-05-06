@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AgroApp – Mapa pól</title>
+  <title>AgroApp – Mapa pól z Geoportalem</title>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
@@ -74,27 +74,53 @@
 
   let drawnPolygon = null;
   let drawnItems = new L.FeatureGroup();
-  const map = L.map('map').setView([startLat, startLng], startZoom);
 
-  // Warstwa podstawowa: OpenStreetMap
-  const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const map = L.map('map', {
+    center: [startLat, startLng],
+    zoom: startZoom,
+    layers: [] // warstwy dodamy niżej
+  });
+
+  // Warstwa OSM
+  const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors'
   });
 
-  // Warstwa z Geoportalu: działki, numery, budynki
-  const parcelLayer = L.tileLayer.wms('https://integracja.gugik.gov.pl/cgi-bin/KrajowaIntegracjaEwidencjiGruntow', {
-    layers: 'dzialki,numery_dzialek,budynki',
+  // Warstwa ortofotomapy z Geoportalu
+  const ortofotomapa = L.tileLayer.wms('https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/MapServer/WMSServer', {
+    layers: 'Raster',
     format: 'image/png',
-    transparent: true,
-    version: '1.1.1',
-    attribution: '&copy; GUGiK',
-    crs: L.CRS.EPSG3857
+    transparent: false,
+    version: '1.3.0',
+    attribution: '&copy; Geoportal GUGiK'
   });
 
-  baseLayer.addTo(map);
-  parcelLayer.addTo(map);
+  // Granice działek i numery działek
+  const graniceDzialek = L.tileLayer.wms('https://mapy.geoportal.gov.pl/wss/service/PZGIK/EGIB/MapServer/WMSServer', {
+    layers: 'dzialki,numery_dzialek',
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    attribution: '&copy; GUGiK'
+  });
+
+  // Dodaj domyślne warstwy
+  ortofotomapa.addTo(map);
+  graniceDzialek.addTo(map);
   map.addLayer(drawnItems);
+
+  // Warstwy bazowe i nakładki
+  const baseMaps = {
+    "Ortofotomapa GUGiK": ortofotomapa,
+    "OpenStreetMap": osmLayer
+  };
+
+  const overlayMaps = {
+    "Działki ewidencyjne": graniceDzialek
+  };
+
+  L.control.layers(baseMaps, overlayMaps).addTo(map);
 
   map.on('moveend', function () {
     const center = map.getCenter();
@@ -145,8 +171,8 @@
       centerLat += coord.lat;
       centerLng += coord.lng;
     });
-    centerLat /= coords.length;
-    centerLng /= coords.length;
+    centerLat = centerLat / coords.length;
+    centerLng = centerLng / coords.length;
 
     const fieldData = {
       userId: userId,
