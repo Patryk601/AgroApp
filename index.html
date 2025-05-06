@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AgroApp – Mapa pól</title>
+  <title>AgroApp – Mapa pól z Geoportalu</title>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; }
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+    }
     #fieldForm {
       display: none;
       position: absolute;
@@ -33,17 +36,17 @@
   <button onclick="saveField()">Zapisz pole</button>
 </div>
 
-<!-- Leaflet + Draw + Geometry -->
+<!-- Leaflet & plugins -->
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
 
-<!-- Firebase -->
+<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
 
 <script>
+  // === FIREBASE ===
   const firebaseConfig = {
     apiKey: "AIzaSyAjzbeyCqqSg7KyM4NqGxQCrrxSz7rgC18",
     authDomain: "agroapp-1d397.firebaseapp.com",
@@ -56,7 +59,15 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  // --- Map setup
+  // UID z parametru URL
+  const params = new URLSearchParams(window.location.search);
+  const userId = params.get("uid");
+
+  if (!userId) {
+    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
+  }
+
+  // === MAPA ===
   const savedLat = localStorage.getItem("mapLat");
   const savedLng = localStorage.getItem("mapLng");
   const savedZoom = localStorage.getItem("mapZoom");
@@ -65,18 +76,24 @@
   let startLng = savedLng ? parseFloat(savedLng) : 22.57;
   let startZoom = savedZoom ? parseInt(savedZoom) : 12;
 
-  let map = L.map('map').setView([startLat, startLng], startZoom);
-  let drawnItems = new L.FeatureGroup();
   let drawnPolygon = null;
-  let currentUserId = null;
+  let drawnItems = new L.FeatureGroup();
+  const map = L.map('map', {
+    crs: L.CRS.EPSG3857
+  }).setView([startLat, startLng], startZoom);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
+  // WMS Geoportal
+  const wmsLayer = L.tileLayer.wms("https://integracja.gugik.gov.pl/cgi-bin/KrajowaIntegracjaEwidencjiGruntow", {
+    layers: 'dzialki,numery_dzialek,budynki',
+    format: 'image/png',
+    transparent: true,
+    version: '1.1.1',
+    attribution: 'Geoportal KIEG'
   }).addTo(map);
+
   map.addLayer(drawnItems);
 
-  map.on('moveend', () => {
+  map.on('moveend', function () {
     const center = map.getCenter();
     localStorage.setItem("mapLat", center.lat);
     localStorage.setItem("mapLng", center.lng);
@@ -92,7 +109,10 @@
       circle: false,
       circlemarker: false
     },
-    edit: { featureGroup: drawnItems, remove: true }
+    edit: {
+      featureGroup: drawnItems,
+      remove: true
+    }
   });
   map.addControl(drawControl);
 
@@ -109,23 +129,24 @@
   });
 
   function saveField() {
-    if (!drawnPolygon || !currentUserId) return;
+    if (!drawnPolygon || !userId) return;
 
     const coords = drawnPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
     const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
     const areaHa = area / 10000;
     const areaAr = area / 100;
 
-    let centerLat = 0, centerLng = 0;
+    let centerLat = 0;
+    let centerLng = 0;
     coords.forEach(coord => {
       centerLat += coord.lat;
       centerLng += coord.lng;
     });
-    centerLat /= coords.length;
-    centerLng /= coords.length;
+    centerLat = centerLat / coords.length;
+    centerLng = centerLng / coords.length;
 
     const fieldData = {
-      userId: currentUserId,
+      userId: userId,
       name: document.getElementById("fieldName").value,
       crop: document.getElementById("cropType").value,
       village: document.getElementById("village").value,
@@ -133,9 +154,9 @@
       coordinates: coords,
       area_ha: areaHa,
       area_ar: areaAr,
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
       center_lat: centerLat,
       center_lng: centerLng,
-      created_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
     db.collection("fields").add(fieldData)
@@ -145,52 +166,46 @@
         drawnItems.clearLayers();
         location.reload();
       })
-      .catch(error => {
+      .catch((error) => {
         console.error("Błąd zapisu: ", error);
-        alert("Błąd zapisu pola.");
+        alert("Wystąpił błąd podczas zapisu pola.");
       });
   }
 
-  function loadFields(userId) {
-    db.collection("fields").where("userId", "==", userId).get().then((querySnapshot) => {
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const polygon = L.polygon(data.coordinates.map(c => [c.lat, c.lng]), {
-          color: data.color || "#4caf50"
-        }).addTo(drawnItems);
+  function loadFields() {
+    db.collection("fields")
+      .where("userId", "==", userId)
+      .get()
+      .then((querySnapshot) => {
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          const polygon = L.polygon(data.coordinates.map(c => [c.lat, c.lng]), {
+            color: data.color || "#4caf50"
+          }).addTo(drawnItems);
 
-        polygon.bindTooltip(data.name, {
-          permanent: true,
-          direction: "center",
-          className: "field-label"
-        });
+          polygon.bindTooltip(data.name, {
+            permanent: true,
+            direction: "center",
+            className: "field-label"
+          });
 
-        polygon.on('click', function () {
-          document.getElementById('fieldName').value = data.name;
-          document.getElementById('cropType').value = data.crop;
-          document.getElementById('village').value = data.village;
-          document.getElementById('color').value = data.color || "#4caf50";
-
-          document.getElementById('fieldForm').style.display = 'block';
+          polygon.on('click', function () {
+            document.getElementById('fieldName').value = data.name;
+            document.getElementById('cropType').value = data.crop;
+            document.getElementById('village').value = data.village;
+            document.getElementById('color').value = data.color || "#4caf50";
+            document.getElementById('fieldForm').style.display = 'block';
+          });
         });
       });
-    });
   }
 
-  // 🔐 Pobierz UID aktualnego użytkownika
-  firebase.auth().onAuthStateChanged(function(user) {
-    if (user) {
-      currentUserId = user.uid;
-      loadFields(currentUserId);
-    } else {
-      alert("Nie jesteś zalogowany.");
-    }
-  });
+  loadFields();
 
-  // FlutterFlow sygnał ręcznego centrowania
+  // Centrowanie z FlutterFlow
   window.centerMapFromFlutter = function(lat, lng) {
     if (map) map.setView([lat, lng], map.getZoom());
-  };
+  }
 </script>
 
 </body>
