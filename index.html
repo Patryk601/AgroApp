@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AgroApp z Geoportalem</title>
+  <title>AgroApp – Mapa pól</title>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; }
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+    }
     #fieldForm {
       display: none;
       position: absolute;
@@ -20,7 +23,9 @@
   </style>
 </head>
 <body>
+
 <div id="map"></div>
+
 <div id="fieldForm">
   <input type="text" id="fieldName" placeholder="Nazwa pola" /><br />
   <input type="text" id="cropType" placeholder="Rodzaj uprawy" /><br />
@@ -34,6 +39,8 @@
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+
+<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
@@ -46,101 +53,151 @@
     messagingSenderId: "683118014918",
     appId: "1:683118014918:web:aba19ec1b52fb12f142c7"
   };
+
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
   const params = new URLSearchParams(window.location.search);
   const userId = params.get("uid");
-  if (!userId) alert("Brak identyfikatora użytkownika!");
+
+  if (!userId) {
+    alert("Brak identyfikatora użytkownika! Nie można zapisywać danych.");
+  }
 
   const savedLat = localStorage.getItem("mapLat");
   const savedLng = localStorage.getItem("mapLng");
   const savedZoom = localStorage.getItem("mapZoom");
 
-  const map = L.map('map').setView(
-    [savedLat ? parseFloat(savedLat) : 51.25, savedLng ? parseFloat(savedLng) : 22.57],
-    savedZoom ? parseInt(savedZoom) : 12
-  );
+  let startLat = savedLat ? parseFloat(savedLat) : 51.25;
+  let startLng = savedLng ? parseFloat(savedLng) : 22.57;
+  let startZoom = savedZoom ? parseInt(savedZoom) : 12;
 
-  map.on('moveend', () => {
+  let drawnPolygon = null;
+  let drawnItems = new L.FeatureGroup();
+  const map = L.map('map').setView([startLat, startLng], startZoom);
+
+  // Warstwa podstawowa: OpenStreetMap
+  const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  });
+
+  // Warstwa z Geoportalu: działki, numery, budynki
+  const parcelLayer = L.tileLayer.wms('https://integracja.gugik.gov.pl/cgi-bin/KrajowaIntegracjaEwidencjiGruntow', {
+    layers: 'dzialki,numery_dzialek,budynki',
+    format: 'image/png',
+    transparent: true,
+    version: '1.1.1',
+    attribution: '&copy; GUGiK',
+    crs: L.CRS.EPSG3857
+  });
+
+  baseLayer.addTo(map);
+  parcelLayer.addTo(map);
+  map.addLayer(drawnItems);
+
+  map.on('moveend', function () {
     const center = map.getCenter();
     localStorage.setItem("mapLat", center.lat);
     localStorage.setItem("mapLng", center.lng);
     localStorage.setItem("mapZoom", map.getZoom());
   });
 
-  const geoportalLayer = L.tileLayer.wms("https://integracja.gugik.gov.pl/cgi-bin/KrajowaIntegracjaEwidencjiGruntow", {
-    layers: "dzialki,numery_dzialek,budynki",
-    format: "image/png",
-    transparent: true,
-    version: "1.1.1",
-    attribution: "© GUGiK",
-    crs: L.CRS.EPSG3857
-  }).addTo(map);
-
-  const drawnItems = new L.FeatureGroup().addTo(map);
   const drawControl = new L.Control.Draw({
-    draw: { polygon: true, rectangle: false, marker: false, polyline: false, circle: false, circlemarker: false },
-    edit: { featureGroup: drawnItems, remove: true }
+    draw: {
+      polygon: true,
+      rectangle: false,
+      marker: false,
+      polyline: false,
+      circle: false,
+      circlemarker: false
+    },
+    edit: {
+      featureGroup: drawnItems,
+      remove: true
+    }
   });
   map.addControl(drawControl);
 
-  let drawnPolygon = null;
-
-  map.on('draw:created', (e) => {
+  map.on('draw:created', function (e) {
     drawnPolygon = e.layer;
     drawnItems.addLayer(drawnPolygon);
+
     const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
-    document.getElementById('areaOutput').innerText = `Powierzchnia: ${(area / 10000).toFixed(2)} ha (${(area / 100).toFixed(2)} arów)`;
+    const areaHa = (area / 10000).toFixed(2);
+    const areaAr = (area / 100).toFixed(2);
+
+    document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
     document.getElementById('fieldForm').style.display = 'block';
   });
 
   function saveField() {
     if (!drawnPolygon || !userId) return;
+
     const coords = drawnPolygon.getLatLngs()[0].map(p => ({ lat: p.lat, lng: p.lng }));
     const area = L.GeometryUtil.geodesicArea(drawnPolygon.getLatLngs()[0]);
-    let centerLat = 0, centerLng = 0;
-    coords.forEach(coord => { centerLat += coord.lat; centerLng += coord.lng; });
+    const areaHa = area / 10000;
+    const areaAr = area / 100;
+
+    let centerLat = 0;
+    let centerLng = 0;
+    coords.forEach(coord => {
+      centerLat += coord.lat;
+      centerLng += coord.lng;
+    });
     centerLat /= coords.length;
     centerLng /= coords.length;
 
-    db.collection("fields").add({
+    const fieldData = {
       userId: userId,
       name: document.getElementById("fieldName").value,
       crop: document.getElementById("cropType").value,
       village: document.getElementById("village").value,
       color: document.getElementById("color").value,
       coordinates: coords,
-      area_ha: area / 10000,
-      area_ar: area / 100,
+      area_ha: areaHa,
+      area_ar: areaAr,
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
       center_lat: centerLat,
       center_lng: centerLng,
-      created_at: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(() => {
-      alert("Pole zapisane!");
-      document.getElementById("fieldForm").style.display = "none";
-      drawnItems.clearLayers();
-      location.reload();
-    }).catch(error => {
-      console.error("Błąd zapisu:", error);
-      alert("Wystąpił błąd podczas zapisu pola.");
-    });
+    };
+
+    db.collection("fields").add(fieldData)
+      .then(() => {
+        alert("Pole zapisane!");
+        document.getElementById("fieldForm").style.display = "none";
+        drawnItems.clearLayers();
+        location.reload();
+      })
+      .catch((error) => {
+        console.error("Błąd zapisu: ", error);
+        alert("Wystąpił błąd podczas zapisu pola.");
+      });
   }
 
   function loadFields() {
-    db.collection("fields").where("userId", "==", userId).get()
+    db.collection("fields")
+      .where("userId", "==", userId)
+      .get()
       .then((querySnapshot) => {
         querySnapshot.forEach((doc) => {
           const data = doc.data();
           const polygon = L.polygon(data.coordinates.map(c => [c.lat, c.lng]), {
             color: data.color || "#4caf50"
           }).addTo(drawnItems);
-          polygon.bindTooltip(data.name, { permanent: true, direction: "center" });
-          polygon.on('click', () => {
+
+          polygon.bindTooltip(data.name, {
+            permanent: true,
+            direction: "center",
+            className: "field-label"
+          });
+
+          polygon.on('click', function () {
             document.getElementById('fieldName').value = data.name;
             document.getElementById('cropType').value = data.crop;
             document.getElementById('village').value = data.village;
             document.getElementById('color').value = data.color || "#4caf50";
+
             document.getElementById('fieldForm').style.display = 'block';
           });
         });
@@ -150,8 +207,11 @@
   loadFields();
 
   window.centerMapFromFlutter = function(lat, lng) {
-    if (map) map.setView([lat, lng], map.getZoom());
-  };
+    if (map) {
+      map.setView([lat, lng], map.getZoom());
+    }
+  }
 </script>
+
 </body>
 </html>
