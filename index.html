@@ -11,7 +11,7 @@
     #fieldForm {
       display: none; position: absolute; bottom: 10px; left: 10px;
       background: white; padding: 10px; z-index: 9999; box-shadow: 0 2px 8px rgba(0,0,0,.15);
-      border-radius: 8px; min-width: 240px; font-family: system-ui, sans-serif;
+      border-radius: 8px; min-width: 260px; font-family: system-ui, sans-serif;
     }
     #fieldForm input[type="text"] { width: 100%; margin: 6px 0; padding: 6px 8px; }
     #fieldForm button { margin-top: 8px; padding: 8px 10px; cursor: pointer; }
@@ -44,28 +44,23 @@
 
 <script>
 /* =======================
-   KONFIG – EDYTUJ WG POTRZEB
+   KONFIG – do edycji wg potrzeb
    ======================= */
 
-// Tryb preferowany: najpierw GetFeatureInfo (GFI), potem fallback do WFS.
-// Jeśli wiesz, że GFI nie zwraca geometrii, możesz przełączyć na WFS jako pierwszy krok.
+// Kolejność: najpierw GetFeatureInfo, potem fallback do WFS.
 const USE_WFS_FIRST = false;
 
-// Jeśli masz własne proxy do obchodzenia CORS, podaj jego URL.
-// Przykład: 'https://twoj-proxy.example.com/proxy?url='
-// Pozostaw pusty string, aby fetchować bez proxy.
+// Jeśli używasz własnego proxy do obchodzenia CORS, wstaw URL, np. 'https://twoj-proxy.app/proxy?url='
 const PROXY_URL = '';
 
-// WMS/WFS Geoportalu EGIB
-const WMS_EGIB_URL = 'https://mapy.geoportal.gov.pl/wss/service/PZGIK/EGIB/MapServer/WMSServer';
-const WFS_EGIB_URL = 'https://mapy.geoportal.gov.pl/wss/service/PZGIK/EGIB/WFSServer';
-const PARCEL_LAYER = 'dzialki'; // warstwa działek
-
-// Ortofotomapa
-const WMS_ORTO_URL = 'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/MapServer/WMSServer';
+// WMS/WFS Geoportalu
+const WMS_EGIB_URL  = 'https://mapy.geoportal.gov.pl/wss/service/PZGIK/EGIB/MapServer/WMSServer';
+const WFS_EGIB_URL  = 'https://mapy.geoportal.gov.pl/wss/service/PZGIK/EGIB/WFSServer';
+const WMS_ORTO_URL  = 'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/MapServer/WMSServer';
+const PARCEL_LAYER  = 'dzialki';
 
 /* =======================
-   FIREBASE – Twoja konfiguracja (zachowana z Twojego kodu)
+   FIREBASE – Twoja konfiguracja
    ======================= */
 const firebaseConfig = {
   apiKey: "AIzaSyAjzbeyCqqSg7KyM4NqGxQCrrxSz7rgC18",
@@ -79,7 +74,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 /* =======================
-   POBIERANIE UID Z URL
+   UID z URL (?uid=...)
    ======================= */
 const params = new URLSearchParams(window.location.search);
 const userId = params.get("uid");
@@ -88,14 +83,14 @@ if (!userId) {
 }
 
 /* =======================
-   MAPA – Inicjalizacja
+   Mapa – inicjalizacja
    ======================= */
-const savedLat = localStorage.getItem("mapLat");
-const savedLng = localStorage.getItem("mapLng");
+const savedLat  = localStorage.getItem("mapLat");
+const savedLng  = localStorage.getItem("mapLng");
 const savedZoom = localStorage.getItem("mapZoom");
-let startLat = savedLat ? parseFloat(savedLat) : 51.25;
-let startLng = savedLng ? parseFloat(savedLng) : 22.57;
-let startZoom = savedZoom ? parseInt(savedZoom) : 12;
+let startLat  = savedLat  ? parseFloat(savedLat)  : 51.25;
+let startLng  = savedLng  ? parseFloat(savedLng)  : 22.57;
+let startZoom = savedZoom ? parseInt(savedZoom)   : 12;
 
 let drawnPolygon = null;
 let highlightedLayer = null;
@@ -104,25 +99,42 @@ let drawnItems = new L.FeatureGroup();
 const map = L.map('map', {
   center: [startLat, startLng],
   zoom: startZoom,
-  layers: []
+  layers: [] // dodamy poniżej
 });
 
-// Podkłady
+/* =======================
+   Podkłady
+   ======================= */
+// OSM – startowa baza
 const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
 });
+
+// Ortofotomapa GUGiK – WMS 1.1.1 + JPEG (ważne!)
 const ortofotomapa = L.tileLayer.wms(WMS_ORTO_URL, {
-  layers: 'Raster', format: 'image/png', transparent: false, version: '1.3.0',
-  attribution: '&copy; Geoportal GUGiK'
+  layers: 'Raster',
+  version: '1.1.1',       // ArcGIS WMS woli 1.1.1
+  format: 'image/jpeg',   // orto najlepiej w JPEG
+  transparent: false,
+  attribution: '&copy; Geoportal GUGiK',
+  tileSize: 256
 });
+
+// Granice działek (nakładka)
 const graniceDzialek = L.tileLayer.wms(WMS_EGIB_URL, {
-  layers: 'dzialki,numery_dzialek', format: 'image/png', transparent: true, version: '1.3.0',
+  layers: 'dzialki,numery_dzialek',
+  version: '1.3.0',
+  format: 'image/png',
+  transparent: true,
   attribution: '&copy; GUGiK'
 });
 
-// Domyślne warstwy
-ortofotomapa.addTo(map);
-graniceDzialek.addTo(map);
+/* =======================
+   Dodanie warstw i kontrolki
+   ======================= */
+osmLayer.addTo(map);          // tylko jedna baza startowo
+graniceDzialek.addTo(map);    // nakładka
 map.addLayer(drawnItems);
 
 L.control.layers(
@@ -130,15 +142,19 @@ L.control.layers(
   { "Działki ewidencyjne": graniceDzialek }
 ).addTo(map);
 
-// Zapamiętywanie widoku
+/* =======================
+   Zapamiętywanie widoku
+   ======================= */
 map.on('moveend', function () {
-  const center = map.getCenter();
-  localStorage.setItem("mapLat", center.lat);
-  localStorage.setItem("mapLng", center.lng);
+  const c = map.getCenter();
+  localStorage.setItem("mapLat", c.lat);
+  localStorage.setItem("mapLng", c.lng);
   localStorage.setItem("mapZoom", map.getZoom());
 });
 
-// Rysowanie własnych poligonów (opcjonalnie, nadal działa)
+/* =======================
+   Rysowanie (opcjonalnie)
+   ======================= */
 const drawControl = new L.Control.Draw({
   draw: {
     polygon: true, rectangle: false, marker: false, polyline: false, circle: false, circlemarker: false
@@ -161,19 +177,16 @@ map.on('draw:created', function (e) {
 });
 
 /* =======================
-   POMOCNICZE – proxy / URL-e
+   Pomocnicze – proxy/URL
    ======================= */
-function proxied(url) {
-  if (!PROXY_URL) return url;
-  return PROXY_URL + encodeURIComponent(url);
-}
+function proxied(url) { return PROXY_URL ? PROXY_URL + encodeURIComponent(url) : url; }
 
 function buildGetFeatureInfoUrl(latlng) {
   const point = map.latLngToContainerPoint(latlng, map.getZoom());
-  const size = map.getSize();
-  const bounds = map.getBounds();
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
+  const size  = map.getSize();
+  const b     = map.getBounds();
+  const sw    = b.getSouthWest();
+  const ne    = b.getNorthEast();
 
   const params = {
     service: 'WMS',
@@ -184,7 +197,7 @@ function buildGetFeatureInfoUrl(latlng) {
     styles: '',
     format: 'image/png',
     transparent: true,
-    info_format: 'application/json', // spróbujemy JSON
+    info_format: 'application/json',
     i: Math.round(point.x),
     j: Math.round(point.y),
     crs: 'EPSG:4326',
@@ -197,7 +210,7 @@ function buildGetFeatureInfoUrl(latlng) {
 }
 
 /* =======================
-   WYBÓR DZIAŁKI – klik na mapie
+   Wybór działki – klik
    ======================= */
 map.on('click', async function(e) {
   try {
@@ -207,31 +220,22 @@ map.on('click', async function(e) {
       return;
     }
 
-    // 1) Próba GetFeatureInfo
+    // 1) GetFeatureInfo
     const gfiUrl = buildGetFeatureInfoUrl(e.latlng);
     let resp = await fetch(proxied(gfiUrl));
     if (!resp.ok) throw new Error('GetFeatureInfo HTTP ' + resp.status);
 
-    // Spróbuj JSON; jeśli się nie da – fallback do WFS
     let data = null;
-    try { data = await resp.json(); } catch (e) { data = null; }
-
-    let usedWFS = false;
-    let feat = null;
+    try { data = await resp.json(); } catch (_) { data = null; }
 
     if (!data || !data.features || !data.features.length || !data.features[0].geometry) {
-      // 2) Fallback WFS jeśli brak geometrii w GFI
-      usedWFS = true;
+      // 2) Fallback do WFS (gdy brak geometrii lub format inny niż JSON)
       const ok = await selectParcelViaWFS(e.latlng);
-      if (!ok) {
-        alert('Nie znaleziono działki (GFI/WFS).');
-      }
+      if (!ok) alert('Nie znaleziono działki (GFI/WFS).');
       return;
-    } else {
-      feat = data.features[0];
     }
 
-    showAndPrepareFeature(feat);
+    showAndPrepareFeature(data.features[0]);
 
   } catch (err) {
     console.error('Błąd przy kliknięciu:', err);
@@ -243,66 +247,52 @@ map.on('click', async function(e) {
    WFS – fallback / tryb główny
    ======================= */
 async function selectParcelViaWFS(latlng) {
-  // Mały bufor ~10 m w stopniach (~1e-4). W razie potrzeby powiększ.
-  const tol = 0.00012;
+  const tol  = 0.00012; // ~10 m w stopniach
   const bbox = [latlng.lng - tol, latlng.lat - tol, latlng.lng + tol, latlng.lat + tol].join(',');
+  const url  = `${WFS_EGIB_URL}?service=WFS&version=2.0.0&request=GetFeature&typename=${PARCEL_LAYER}` +
+               `&bbox=${bbox},EPSG:4326&outputFormat=application/json`;
 
-  const url = `${WFS_EGIB_URL}?service=WFS&version=2.0.0&request=GetFeature&typename=${PARCEL_LAYER}` +
-              `&bbox=${bbox},EPSG:4326&outputFormat=application/json`;
   const resp = await fetch(proxied(url));
-  if (!resp.ok) {
-    console.warn('WFS HTTP', resp.status);
-    return false;
-  }
+  if (!resp.ok) return false;
   const gj = await resp.json();
   if (!gj.features || !gj.features.length) return false;
 
-  const feat = gj.features[0];
-  showAndPrepareFeature(feat);
+  showAndPrepareFeature(gj.features[0]);
   return true;
 }
 
 /* =======================
-   Rysowanie i kalkulacja z wybranej działki
+   Podświetlenie + powierzchnia
    ======================= */
 function showAndPrepareFeature(feat) {
   const parcelId = feat.properties?.identyfikator || feat.properties?.id || feat.id || null;
 
-  if (highlightedLayer) {
-    map.removeLayer(highlightedLayer);
-    highlightedLayer = null;
-  }
+  if (highlightedLayer) { map.removeLayer(highlightedLayer); highlightedLayer = null; }
   highlightedLayer = L.geoJSON(feat.geometry, {
     style: { color: '#ff6a00', weight: 3, fillOpacity: 0.15 }
   }).addTo(drawnItems);
 
-  // Obliczenie powierzchni (ha/ary) na bazie pierwszego poligonu
   let area = 0;
   highlightedLayer.eachLayer(layer => {
     if (layer instanceof L.Polygon) {
       const rings = layer.getLatLngs();
-      // Polygon -> [ring], MultiPolygon -> [[ring], [ring], ...]
-      if (Array.isArray(rings) && rings.length) {
-        const firstRing = Array.isArray(rings[0]) ? rings[0] : rings;
-        area += L.GeometryUtil.geodesicArea(firstRing);
-      }
+      const firstRing = Array.isArray(rings[0]) ? rings[0] : rings;
+      if (firstRing) area += L.GeometryUtil.geodesicArea(firstRing);
     }
   });
   const areaHa = (area / 10000).toFixed(2);
   const areaAr = (area / 100).toFixed(2);
   document.getElementById('areaOutput').innerText = `Powierzchnia: ${areaHa} ha (${areaAr} arów)`;
 
-  // Pokaż formularz, zapamiętaj parcelId
   const form = document.getElementById('fieldForm');
   form.style.display = 'block';
   form.dataset.parcelId = parcelId || '';
 }
 
 /* =======================
-   UTIL – ekstrakcja koordynatów
+   Utils – koordynaty z warstwy
    ======================= */
 function layerToFirstPolygonCoords(layer) {
-  // Dla L.Polygon lub L.GeoJSON -> zwróć pierwszy pierścień jako [{lat,lng},...]
   if (layer instanceof L.Polygon) {
     const rings = layer.getLatLngs();
     const firstRing = Array.isArray(rings[0]) ? rings[0] : rings;
@@ -320,7 +310,7 @@ function layerToFirstPolygonCoords(layer) {
 }
 
 /* =======================
-   ZAPIS POLA DO FIRESTORE
+   Zapis pola do Firestore
    ======================= */
 function saveField() {
   if (!userId) { alert('Brak uid – dodaj ?uid=... w URL.'); return; }
@@ -335,13 +325,11 @@ function saveField() {
     return;
   }
 
-  // Pole powierzchni
   const latlngs = coords.map(c => L.latLng(c.lat, c.lng));
-  const area = L.GeometryUtil.geodesicArea(latlngs);
-  const areaHa = area / 10000;
-  const areaAr = area / 100;
+  const area    = L.GeometryUtil.geodesicArea(latlngs);
+  const areaHa  = area / 10000;
+  const areaAr  = area / 100;
 
-  // Prosty centroid jako średnia współrzędnych
   let centerLat = 0, centerLng = 0;
   coords.forEach(c => { centerLat += c.lat; centerLng += c.lng; });
   centerLat /= coords.length; centerLng /= coords.length;
@@ -377,35 +365,33 @@ function saveField() {
 }
 
 /* =======================
-   WCZYTYWANIE POLI UŻYTKOWNIKA
+   Wczytywanie pól użytkownika
    ======================= */
 function loadFields() {
   if (!userId) return;
-  db.collection("fields")
-    .where("userId", "==", userId)
-    .get()
-    .then((querySnapshot) => {
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const polygon = L.polygon(data.coordinates.map(c => [c.lat, c.lng]), {
-          color: data.color || "#4caf50"
+  db.collection("fields").where("userId", "==", userId).get()
+    .then((snap) => {
+      snap.forEach((doc) => {
+        const d = doc.data();
+        const polygon = L.polygon(d.coordinates.map(c => [c.lat, c.lng]), {
+          color: d.color || "#4caf50"
         }).addTo(drawnItems);
 
-        polygon.bindTooltip(data.name || '(bez nazwy)', {
+        polygon.bindTooltip(d.name || '(bez nazwy)', {
           permanent: true, direction: "center", className: "field-label"
         });
 
         polygon.on('click', function () {
-          // Załaduj dane do formularza (edycja nazw/kolorów)
-          document.getElementById('fieldName').value = data.name || '';
-          document.getElementById('cropType').value = data.crop || '';
-          document.getElementById('village').value = data.village || '';
-          document.getElementById('color').value = data.color || '#4caf50';
+          document.getElementById('fieldName').value = d.name || '';
+          document.getElementById('cropType').value  = d.crop || '';
+          document.getElementById('village').value   = d.village || '';
+          document.getElementById('color').value     = d.color || '#4caf50';
           document.getElementById('areaOutput').innerText =
-            `Powierzchnia: ${(data.area_ha || 0).toFixed ? data.area_ha.toFixed(2) : (data.area_ha || 0)} ha (${(data.area_ar || 0).toFixed ? data.area_ar.toFixed(2) : (data.area_ar || 0)} arów)`;
+            `Powierzchnia: ${(d.area_ha || 0).toFixed ? d.area_ha.toFixed(2) : (d.area_ha || 0)} ha (` +
+            `${(d.area_ar || 0).toFixed ? d.area_ar.toFixed(2) : (d.area_ar || 0)} arów)`;
           const form = document.getElementById('fieldForm');
           form.style.display = 'block';
-          form.dataset.parcelId = data.parcelId || '';
+          form.dataset.parcelId = d.parcelId || '';
         });
       });
     });
@@ -413,7 +399,7 @@ function loadFields() {
 loadFields();
 
 /* =======================
-   API DLA Fluttera (opcjonalnie)
+   API dla Fluttera (opcjonalnie)
    ======================= */
 window.centerMapFromFlutter = function(lat, lng) {
   if (map) map.setView([lat, lng], map.getZoom());
